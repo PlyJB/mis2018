@@ -143,10 +143,6 @@
               </td>
               <td class="text-center">
                 <div class="d-flex justify-content-center align-items-center gap-2">
-                  <a href="{{ url_for('advance_payment.export_fund_request_pdf', request_id=request.id) }}"
-                     class="btn btn-outline-dark btn-sm fw-bold" target="_blank">
-                    <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
-                  </a>
                   {% if request.status not in ['ยกเลิก', 'ส่งเบิกแล้ว', 'ส่งเบิกครบแล้ว', 'เบิกเงินสำเร็จ', 'เคลียร์ยอดสำเร็จ'] %}
                     {% if session.get('user_role') == 'secretary' %}
                       {% if request.form_type == '31' and request.withdrawal_proof_reference %}
