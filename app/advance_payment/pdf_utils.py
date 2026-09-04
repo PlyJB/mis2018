@@ -15,7 +15,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.graphics.shapes import Drawing, Circle, Rect
 from .models import db, BankAccountInfo, StaffAccount, PettyCashSetting
 from app.models import Org
-from app.staff.models import StaffHeadPosition
+from app.staff.models import StaffHeadPosition, StaffLeaveApprover
 
 
 INTEREST_PERIOD_MONTH_LABELS = {
@@ -168,6 +168,51 @@ def _get_user_by_id(user_id):
     return db.session.query(StaffAccount).get(user_id)
 
 
+def _get_middle_level_head(staff_account_id):
+    """Resolve the active middle-level head configured for a borrower."""
+    if not staff_account_id:
+        return None
+
+    approver = (
+        db.session.query(StaffLeaveApprover)
+        .filter_by(
+            staff_account_id=staff_account_id,
+            is_active=True,
+            is_middle_level=True,
+        )
+        .order_by(StaffLeaveApprover.id.desc())
+        .first()
+    )
+    if not approver:
+        return None
+
+    head_account = approver.account
+    head_position = (
+        db.session.query(StaffHeadPosition)
+        .filter_by(staff_account_id=approver.approver_account_id)
+        .order_by(StaffHeadPosition.id.desc())
+        .first()
+    )
+    if not head_account:
+        return None
+
+    return {
+        "head": getattr(head_account, "name", None) or getattr(head_account, "fullname", None),
+        "head_position": getattr(head_position, "position", None),
+    }
+
+
+def _apply_borrower_head(dept_info, staff_account_id):
+    """Prefer the configured borrower-specific head when one exists."""
+    head_info = _get_middle_level_head(staff_account_id)
+    if head_info and head_info.get("head"):
+        dept_info = dict(dept_info)
+        dept_info["head"] = head_info["head"]
+        if head_info.get("head_position"):
+            dept_info["head_position"] = head_info["head_position"]
+    return dept_info
+
+
 def _get_bank_account_info_for_ticket(ticket):
     if not ticket:
         return None
@@ -249,6 +294,7 @@ def generate_fnar02_pdf(ticket):
 
     # 2. ค้นหาข้อมูลผู้บังคับบัญชา (head_of_department) และผู้ดูแลบัญชี โดยใช้ชื่อหน่วยงาน
     dept_info = get_department_info_from_api(department_name)
+    dept_info = _apply_borrower_head(dept_info, getattr(ticket, "borrower_id", None))
     
     # 3. Map ค่าเพื่อนำไปใช้ในเอกสาร
     head_name = dept_info.get("head", ".......................................................")
@@ -520,7 +566,13 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
         or "........................................"
     )
 
+    borrowing_ticket = getattr(fund_request, "borrowing_ticket", None) if fund_request else None
+    borrower_account_id = (
+        getattr(borrowing_ticket, "borrower_id", None)
+        or getattr(requester, "id", None)
+    )
     dept_info = get_department_info_from_api(department_name)
+    dept_info = _apply_borrower_head(dept_info, borrower_account_id)
     head_name = dept_info.get("head", ".......................................................")
     head_pos = dept_info.get("head_position", "หัวหน้าฝ่าย")
 
@@ -604,7 +656,6 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
     end_date_str = get_thai_month_year(end_receipt) if end_receipt else date_thai
 
     bank_account_info = None
-    borrowing_ticket = getattr(fund_request, "borrowing_ticket", None) if fund_request else None
     request_account_number = getattr(borrowing_ticket, "account_number", None) if borrowing_ticket else None
     if request_account_number:
         bank_account_info = _get_bank_account_info_for_account_number(request_account_number)
@@ -1008,6 +1059,7 @@ def generate_ticket_return(return_detail):
     story.extend([header_table, Spacer(1, 10)])
 
     dept_info = get_department_info_from_api(department_name)
+    dept_info = _apply_borrower_head(dept_info, getattr(ticket, "borrower_id", None))
     head_name = dept_info.get("head", ".......................................................")
     head_position = dept_info.get("head_position", "หัวหน้าหน่วยงาน")
 
@@ -1153,7 +1205,12 @@ def generate_fund_request_pdf(fund_request):
     # Resolve the organization by its stable ID; department_name is legacy display data.
     org = db.session.query(Org).get(getattr(fund_request, "org_id", None))
     dept_lookup = getattr(fund_request, "org_id", None) or getattr(org, "name", None)
+    borrower_account_id = (
+        getattr(borrowing_ticket, "borrower_id", None)
+        or getattr(requester_user, "id", None)
+    )
     dept_info = get_department_info_from_api(dept_lookup)
+    dept_info = _apply_borrower_head(dept_info, borrower_account_id)
     head_name = dept_info.get("head", ".......................................................")
     head_pos = dept_info.get("head_position", "หัวหน้าฝ่าย")
     keeper_name = dept_info.get("keeper", ".......................................................")

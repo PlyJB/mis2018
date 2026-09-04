@@ -63,18 +63,29 @@
 <section class="p-4 border rounded-4 bg-white shadow-sm mb-4">
   <div class="row g-3">
     <!-- Search Box -->
-    <div class="col-md-5">
+    <div class="col-md-4">
       <label for="searchQuery" class="form-label fw-bold text-secondary small">ค้นหาข้อความ</label>
       <div class="input-group">
         <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
         <input type="text" id="searchQuery" class="form-control border-start-0 ps-0" 
-               placeholder="ค้นหา เลขที่ บย., ชื่อผู้ประสานงาน, หรือชื่อโครงการ..." 
+               placeholder="ค้นหา เลขที่ บย., หน่วยงาน, ชื่อบัญชี, เลขที่บัญชี..." 
                onkeyup="filterTicketsTable()" style="border-radius: 0 6px 6px 0;">
       </div>
     </div>
 
-    <!-- Status Filter -->
+    <!-- Org Filter -->
     <div class="col-md-3">
+      <label for="orgFilter" class="form-label fw-bold text-secondary small">กรองตามหน่วยงาน</label>
+      <select id="orgFilter" class="form-select style-select" onchange="filterTicketsTable()">
+        <option value="all">ทุกหน่วยงาน</option>
+        {% for org in org_options %}
+          <option value="{{ org.id }}">{{ org.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Status Filter -->
+    <div class="col-md-2">
       <label for="statusFilter" class="form-label fw-bold text-secondary small">กรองตามสถานะ</label>
       <select id="statusFilter" class="form-select style-select" onchange="filterTicketsTable()">
         <option value="all">แสดงสถานะทั้งหมด</option>
@@ -88,7 +99,7 @@
     </div>
 
     <!-- Sorting -->
-    <div class="col-md-4">
+    <div class="col-md-3">
       <label for="sortOrder" class="form-label fw-bold text-secondary small">จัดเรียงตามลำดับ</label>
       <select id="sortOrder" class="form-select style-select" onchange="sortTicketsTable()">
         <option value="id_desc">รายการล่าสุด → เก่าสุด</option>
@@ -174,8 +185,12 @@
               data-id="{{ borrowing_ticket.id or 0 }}"
               data-number="{{ borrowing_ticket.number if borrowing_ticket.number else '' }}"
               data-project="{{ borrowing_ticket.borrowing_ticket_purpose if borrowing_ticket.borrowing_ticket_purpose else '' }}" 
+              data-org-id="{{ borrowing_ticket.search_org_id or '' }}"
+              data-org="{{ borrowing_ticket.search_org_name or '' }}"
               data-borrower="{{ borrowing_ticket.borrower_name if dashboard_role == 'Finance' else '' }}"
               data-email="{{ borrowing_ticket.borrower_email if borrowing_ticket.borrower_email else '' }}"
+              data-account-name="{{ borrowing_ticket.search_account_name or '' }}"
+              data-account-number="{{ borrowing_ticket.search_account_number or '' }}"
               data-status="{{ display_status }}" 
               data-budget="{{ borrowing_ticket.required_budget or 0 }}" 
               data-duedate="{{ borrowing_ticket.due_date.strftime('%Y-%m-%d') if borrowing_ticket.due_date else '9999-12-31' }}">
@@ -262,7 +277,8 @@
 <!-- JavaScript Logic -->
 <script>
   function filterTicketsTable() {
-    const q = document.getElementById("searchQuery").value.toLowerCase().trim();
+      const q = document.getElementById("searchQuery").value.toLowerCase().trim();
+    const org = document.getElementById("orgFilter").value;
     const status = document.getElementById("statusFilter").value.toLowerCase();
     const rows = document.querySelectorAll(".ticket-row");
     let visibleCount = 0;
@@ -270,14 +286,19 @@
     rows.forEach(row => {
       const number = (row.getAttribute("data-number") || "").toLowerCase();
       const project = (row.getAttribute("data-project") || "").toLowerCase();
+      const orgId = (row.getAttribute("data-org-id") || "").toLowerCase();
+      const orgName = (row.getAttribute("data-org") || "").toLowerCase();
       const borrower = (row.getAttribute("data-borrower") || "").toLowerCase();
       const email = (row.getAttribute("data-email") || "").toLowerCase();
+      const accountName = (row.getAttribute("data-account-name") || "").toLowerCase();
+      const accountNumber = (row.getAttribute("data-account-number") || "").toLowerCase();
       const rStatus = (row.getAttribute("data-status") || "").toLowerCase();
 
-      const matchesSearch = number.includes(q) || project.includes(q) || borrower.includes(q) || email.includes(q);
+      const matchesSearch = number.includes(q) || project.includes(q) || borrower.includes(q) || email.includes(q) || orgName.includes(q) || accountName.includes(q) || accountNumber.includes(q);
+      const matchesOrg = (org === "all") || (orgId === org);
       const matchesStatus = (status === "all") || (rStatus === status);
 
-      if (matchesSearch && matchesStatus) {
+      if (matchesSearch && matchesOrg && matchesStatus) {
         row.style.display = "";
         visibleCount++;
       } else {

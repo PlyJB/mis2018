@@ -252,6 +252,22 @@ def _fund_request_account_number(fund_request, default=""):
     return getattr(setting, "account_number", None) or default
 
 
+def _bank_account_search_info(account):
+    if not account:
+        return "", ""
+
+    account_name = getattr(account, "thai_name", None) or getattr(account, "name", None) or ""
+    account_number = getattr(account, "account_number", None) or ""
+    return account_name, account_number
+
+
+def _org_search_info(org):
+    if not org:
+        return None, "", ""
+
+    return getattr(org, "id", None), getattr(org, "name", None) or getattr(org, "en_name", None) or "", getattr(org, "display_name", None) or getattr(org, "name", None) or getattr(org, "en_name", None) or ""
+
+
 def _resolve_org_by_department_name(dept_name):
     normalized = _normalize_lookup_value(dept_name)
     if not normalized:
@@ -2465,6 +2481,7 @@ def finance_bank_account_registry():
 def tickets_view():
     filter_type = request.args.get("filter", "").strip()
     today_date = datetime.now().date()
+    org_options = db.session.query(Org).order_by(Org.name.asc()).all()
 
     # Query ข้อมูลตั๋วเงินยืมทั้งหมด
     query = db.session.query(BorrowingTicket).order_by(BorrowingTicket.id.desc())
@@ -2484,6 +2501,15 @@ def tickets_view():
     shadow_sum_debt = 0.0
 
     for ticket in all_tickets:
+        borrower_user = getattr(ticket, "borrower_user", None)
+        ticket_org = _get_staff_org(borrower_user)
+        ticket.search_org_id = getattr(ticket_org, "id", None)
+        ticket.search_org_name = getattr(ticket_org, "name", None) or getattr(ticket_org, "en_name", None) or ""
+        ticket.search_account_name, ticket.search_account_number = _bank_account_search_info(
+            getattr(ticket, "bank_account_info", None)
+        )
+        if not ticket.search_account_number:
+            ticket.search_account_number = ticket.account_number or ""
         raw_status = (ticket.status or "").strip()
         if ticket.due_date:
             if today_date > ticket.due_date:
@@ -2541,6 +2567,7 @@ def tickets_view():
         near_due_count=near_due_count,
         overdue_count=overdue_count,
         shadow_sum_debt=shadow_sum_debt,
+        org_options=org_options,
     )
 
 @bp.route("/tickets/<int:ticket_id>/verification")
@@ -3677,6 +3704,7 @@ def reject_borrowing_ticket(ticket_id):
 @bp.route("/finance/return-records", methods=["GET"])
 @login_required(role="finance")
 def return_records_history():
+    org_options = db.session.query(Org).order_by(Org.name.asc()).all()
     # 1. ดึงข้อมูลประวัติหลักฐานเอกสารส่งใช้เงินยืม (ReturnDetail)
     return_records = db.session.query(ReturnDetail).filter(ReturnDetail.status != "ฉบับร่าง").all()
 
@@ -3684,6 +3712,9 @@ def return_records_history():
     for record in return_records:
         ticket = db.session.query(BorrowingTicket).filter_by(id=record.ticket_id).first()
         closing_document = _get_closing_document(record.closing_document_id)
+        borrower_user = _get_user_by_id(getattr(ticket, "borrower_id", None)) if ticket else None
+        borrower_org = _get_staff_org(borrower_user)
+        account_name, account_number = _bank_account_search_info(getattr(ticket, "bank_account_info", None) if ticket else None)
 
         processed_records.append({
             "record_type": "return",
@@ -3692,6 +3723,10 @@ def return_records_history():
             "ticket_number": f"บย. {ticket.number}" if ticket and ticket.number else "N/A",
             "borrowing_ticket_name": ticket.borrowing_ticket_name if ticket else "N/A",
             "borrower_name": (ticket.borrower_name or getattr(_get_user_by_id(getattr(ticket, "borrower_id", None)), "name", "")) if ticket else "N/A",
+            "org_id": getattr(borrower_org, "id", None),
+            "org_name": getattr(borrower_org, "name", None) or getattr(borrower_org, "en_name", None) or "",
+            "account_name": account_name,
+            "account_number": account_number or (ticket.account_number if ticket else ""),
             "amount_spent": float(record.amount_spent or 0),
             "total_amount": float(record.amount_spent or 0),
             "status": record.status,
@@ -3713,6 +3748,12 @@ def return_records_history():
     for record in parcel_records:
         _attach_parcel_return_context(record)
         closing_document = _get_closing_document(record.closing_document_id)
+        ticket = getattr(record, "borrowing_ticket", None)
+        fund_request = getattr(record, "fund_request", None)
+        org = getattr(fund_request, "org", None) if fund_request else None
+        if org is None and ticket:
+            org = _get_staff_org(_get_user_by_id(getattr(ticket, "borrower_id", None)))
+        account_name, account_number = _bank_account_search_info(getattr(ticket, "bank_account_info", None) if ticket else None)
 
         processed_records.append({
             "record_type": "parcel_return",
@@ -3726,6 +3767,10 @@ def return_records_history():
             ),
             "borrowing_ticket_name": record.display_subject_name if getattr(record, "display_subject_name", None) else "N/A",
             "borrower_name": record.display_borrower_name if getattr(record, "display_borrower_name", None) else "N/A",
+            "org_id": getattr(org, "id", None),
+            "org_name": getattr(org, "name", None) or getattr(org, "en_name", None) or "",
+            "account_name": account_name,
+            "account_number": account_number or (ticket.account_number if ticket else ""),
             "amount_spent": float(record.amount_spent or 0),
             "total_amount": float(record.amount_spent or 0),
             "status": record.status,
@@ -3771,12 +3816,14 @@ def return_records_history():
         history_mode="return",
         pending_review_count=pending_review_count,
         proofed_count=proofed_count,
+        org_options=org_options,
     )
 
 
 @bp.route("/finance/petty-cash-claim-records", methods=["GET"])
 @login_required(role="finance")
 def petty_cash_claim_history():
+    org_options = db.session.query(Org).order_by(Org.name.asc()).all()
     # 1. ดึงข้อมูลรายการขอเบิกเงินสดย่อย (PettyCashClaimDetail)
     claim_details = (
         db.session.query(PettyCashClaimDetail)
@@ -3799,6 +3846,10 @@ def petty_cash_claim_history():
             if claim.setting
             else (_get_staff_department_name(claim.user, "ไม่ระบุ") if claim.user else "ไม่ระบุ")
         )
+        org = getattr(claim.setting, "org", None) if claim.setting else None
+        if org is None and getattr(claim, "fund_request", None):
+            org = getattr(claim.fund_request, "org", None)
+        account_name, account_number = _bank_account_search_info(getattr(claim.setting, "bank_account_info", None) if claim.setting else None)
         borrower_name = claim.user.name if claim.user else '-'
 
         processed_claims.append({
@@ -3809,6 +3860,10 @@ def petty_cash_claim_history():
             "ticket_number": ticket_num,
             "borrowing_ticket_name": dept_name,
             "borrower_name": borrower_name,
+            "org_id": getattr(org, "id", None),
+            "org_name": getattr(org, "name", None) or getattr(org, "en_name", None) or "",
+            "account_name": account_name,
+            "account_number": account_number or (claim.setting.account_number if claim.setting else ""),
             "amount_spent": float(claim.total_amount),
             "total_amount": float(claim.total_amount),
             "status": claim.status,
@@ -3830,6 +3885,12 @@ def petty_cash_claim_history():
     for record in parcel_records:
         _attach_parcel_return_context(record)
         closing_document = _get_closing_document(record.closing_document_id)
+        ticket = getattr(record, "borrowing_ticket", None)
+        fund_request = getattr(record, "fund_request", None)
+        org = getattr(fund_request, "org", None) if fund_request else None
+        if org is None and ticket:
+            org = _get_staff_org(_get_user_by_id(getattr(ticket, "borrower_id", None)))
+        account_name, account_number = _bank_account_search_info(getattr(ticket, "bank_account_info", None) if ticket else None)
 
         processed_claims.append({
             "record_type": "parcel_return",
@@ -3843,6 +3904,10 @@ def petty_cash_claim_history():
             ),
             "borrowing_ticket_name": record.display_subject_name if getattr(record, "display_subject_name", None) else "N/A",
             "borrower_name": record.display_borrower_name if getattr(record, "display_borrower_name", None) else "N/A",
+            "org_id": getattr(org, "id", None),
+            "org_name": getattr(org, "name", None) or getattr(org, "en_name", None) or "",
+            "account_name": account_name,
+            "account_number": account_number or (ticket.account_number if ticket else ""),
             "amount_spent": float(record.amount_spent or 0),
             "total_amount": float(record.amount_spent or 0),
             "status": record.status,
@@ -3857,6 +3922,16 @@ def petty_cash_claim_history():
         1
         for record in processed_claims
         if record["record_type"] == "petty_cash" and (record["status"] or "").strip() == "ผ่านการตรวจสอบ"
+    )
+    pending_review_count = sum(
+        1
+        for record in processed_claims
+        if _normalize_history_status(record["status"]) in {"รอตรวจสอบ", "กำลังตรวจสอบ"}
+    )
+    proofed_count = sum(
+        1
+        for record in processed_claims
+        if _normalize_history_status(record["status"]) == "ผ่านการตรวจสอบ"
     )
 
     current_year_be = datetime.now().year + 543
@@ -3906,9 +3981,12 @@ def petty_cash_claim_history():
         records=processed_claims,
         history_mode="petty_cash",
         claim_proofed_count=claim_proofed_count,
+        pending_review_count=pending_review_count,
+        proofed_count=proofed_count,
         pending_interest_departments=pending_interest_departments,
         pending_interest_count=pending_interest_count,
         current_interest_period=current_interest_period,
+        org_options=org_options,
     )
 
 
@@ -5117,63 +5195,6 @@ def api_get_department_employees():
     staff_list = data.get("staff_members", []) if isinstance(data, dict) else []
     return jsonify(staff_list)
 
-@bp.route("/api/employees/suggest", methods=["GET"])
-@login_required()
-def suggest_employees():
-    q = request.args.get("q", "").strip().lower()
-    
-    current_user = db.session.query(StaffAccount).get(session.get("user_id"))
-    user_dept = None
-    
-    if current_user:
-        if getattr(current_user, 'petty_cash_setting', None):
-            user_dept = current_user.petty_cash_setting.department_name
-        else:
-            user_dept = _get_staff_department_name(current_user)
-
-    dept = user_dept or request.args.get("department", "").strip()
-
-    if not dept:
-        return jsonify([])
-
-    dept_data = get_department_data_service(dept)
-    if not dept_data:
-        return jsonify([])
-
-    all_members = []
-    seen_names = set()
-
-    head = dept_data.get("head_of_department")
-    if head and head.get("name") not in seen_names:
-        all_members.append({
-            "id": f"head_{dept_data.get('department_code')}",
-            "name": head.get("name"),
-            "position": head.get("position", "หัวหน้าฝ่าย"),
-            "department": dept
-        })
-        seen_names.add(head.get("name"))
-
-    staff_members = dept_data.get("staff_members", [])
-    for member in staff_members:
-        if member.get("name") not in seen_names:
-            all_members.append({
-                "id": member.get("id"),
-                "name": member.get("name"),
-                "position": member.get("position", "บุคลากร"),
-                "department": dept
-            })
-            seen_names.add(member.get("name"))
-
-    if q:
-        filtered_results = [
-            m for m in all_members
-            if q in m["name"].lower() or q in m["position"].lower()
-        ]
-    else:
-        filtered_results = all_members
-
-    return jsonify(filtered_results[:10])
-
 CATEGORY_CHOICES = {
     1: "ค่าตอบแทน (เช่น ค่าเบี้ยเลี้ยง, ค่าตอบแทนวิทยากร)",
     2: "ค่าใช้สอย (เช่น ค่าซ่อมแซม, ค่าเช่า, ค่าจ้างเหมา)",
@@ -5183,33 +5204,6 @@ CATEGORY_CHOICES = {
     6: "โอนคืนบัญชีหน่วย"
 }
 
-@bp.route("/staff/fund-request/<int:request_id>/approve", methods=["POST"])
-@login_required(role=SECRETARY_ROLE)
-def approve_fund_request(request_id):
-    current_user = db.session.query(StaffAccount).get(session.get("user_id"))
-    if not current_user or not _is_current_secretary():
-        abort(403)
-
-    fund_req = db.session.query(FundRequest).get(request_id)
-    if not fund_req:
-        abort(404)
-
-    if fund_req.status != "กำลังดำเนินการ":
-        flash("สามารถอนุมัติได้เฉพาะรายการที่อยู่ในสถานะกำลังดำเนินการเท่านั้น", "warning")
-        return redirect(url_for("advance_payment.staff_fund_request_history"))
-
-    # แยกประเภทฟอร์มในการปรับสถานะ
-    if fund_req.form_type in {'30', FUND_REQUEST_FORM_BORROWING_TICKET}:
-        fund_req.status = "อนุมัติแล้ว"
-    elif fund_req.form_type == '31':
-        fund_req.status = "เบิกเงินแล้ว"
-    else:
-        fund_req.status = "อนุมัติแล้ว"
-
-    ticket_number = fund_req.ticket_number
-    db.session.commit()
-    flash(f"อนุมัติใบเบิกและออกเลขที่ {ticket_number} เรียบร้อยแล้ว", "success")
-    return redirect(url_for("advance_payment.staff_fund_request_history"))
 
 @bp.route("/coordinator/petty-cash-claim/autosave-draft", methods=["POST"], endpoint="coordinator_petty_cash_claim_autosave_draft")
 @bp.route("/borrower/petty-cash-claim/autosave-draft", methods=["POST"], endpoint="borrower_petty_cash_claim_autosave_draft")
