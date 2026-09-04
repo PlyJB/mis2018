@@ -143,23 +143,12 @@
                   </div>
                   <div class="col-md-6 align-self-end">
                     <label for="account_number" class="form-label fw-bold">เลขที่บัญชี</label>
-                    <input
-                      id="account_number"
-                      name="account_number"
-                      type="text"
-                      class="form-control"
-                      list="bank_account_options"
-                      value="{{ borrowing_ticket_form.account_number.data or '' }}"
-                      placeholder="พิมพ์หรือเลือกเลขที่บัญชี"
-                      autocomplete="off"
-                      oninput="syncBankAccountInfo(this)"
-                      onchange="syncBankAccountInfo(this)"
-                    >
-                    <datalist id="bank_account_options">
+                    <select id="account_number" name="account_number" class="form-select" required onchange="syncBankAccountInfo(this)">
+                      <option value="">พิมพ์เพื่อค้นหาหรือเลือกเลขที่บัญชี</option>
                       {% for account in bank_account_options %}
-                        <option value="{{ account.value }}" data-bank-account-id="{{ account.id }}">{{ account.label }}</option>
+                        <option value="{{ account.value }}" data-bank-account-id="{{ account.id }}" {% if borrowing_ticket_form.account_number.data == account.value %}selected{% endif %}>{{ account.label }}</option>
                       {% endfor %}
-                    </datalist>
+                    </select>
                     <input type="hidden" name="bank_account_info_id" id="bank_account_info_id" value="">
                     {% for error in borrowing_ticket_form.account_number.errors %}
                       <div class="text-danger small mt-1">{{ error }}</div>
@@ -238,7 +227,7 @@
                                 </div>
 
                                 <div class="col-md-5 d-flex gap-2 action-buttons-container">
-                                  <a href="{{ doc.download_url or doc.file_path or doc.url or '#' }}" class="btn btn-sm btn-outline-primary download-btn {% if not doc.download_url and not doc.file_path and not doc.url %}d-none{% endif %}" target="_blank" download>
+                                  <a href="{{ doc.url or doc.view_url or doc.file_path or '#' }}" class="btn btn-sm btn-outline-primary download-btn {% if not doc.url and not doc.view_url and not doc.file_path %}d-none{% endif %}" target="_blank" rel="noopener">
                                     <i class="bi bi-download me-1"></i> ดาวน์โหลด
                                   </a>
                                   <button type="button" class="btn btn-sm btn-outline-danger border-1" onclick="removeDocumentRow(this)">
@@ -260,7 +249,7 @@
                               </div>
 
                               <div class="col-md-5 d-flex gap-2 action-buttons-container">
-                                <a href="#" class="btn btn-sm btn-outline-primary download-btn d-none" target="_blank" download>
+                                <a href="#" class="btn btn-sm btn-outline-primary download-btn d-none" target="_blank" rel="noopener" download="announcement.pdf">
                                   <i class="bi bi-download me-1"></i> ดาวน์โหลด
                                 </a>
                                 <button type="button" class="btn btn-sm btn-outline-danger border-1" onclick="removeDocumentRow(this)">
@@ -308,7 +297,7 @@
                                     <input type="text" name="amount[]" step="0.01" min="0.00" class="form-control form-control-sm item-amount-input" value="{{ item.amount }}" oninput="calculateTotalSpent({{ borrowing_ticket.id }})">
                                   </td>
                                   <td>
-                                    <input type="file" name="proof_files_{{ row_index }}[]" accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm" multiple>
+                                    <input type="file" name="proof_files_{{ row_index }}[]" accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm" {% if row_index == 0 and not item.proof_files %}required{% endif %}>
                                     {% for proof_file in item.proof_files %}
                                       <div class="small text-muted mt-1">
                                         <input type="hidden" name="existing_proof_files_{{ row_index }}[]" value="{{ proof_file.proof_reference }}">
@@ -333,26 +322,26 @@
                           <i class="bi bi-plus-lg me-1"></i> เพิ่มแถวใบเสร็จ
                         </button>
                         
-                        <div class="d-flex align-items-center gap-4 flex-wrap ms-auto text-end">
-                          <!-- ยอดเงินยืมตามสัญญา -->
-                          <div class="border-end pe-3">
-                            <div class="text-muted small fw-bold mb-1">ยอดเงินยืมคงค้าง</div>
-                            <div>
-                              <span class="fw-bold text-dark fs-5">
-                                {{ "{:,.2f}".format(borrowing_ticket.ticket_remaining or 0) }}
-                              </span>
-                              <span class="text-muted small ms-1">บาท</span>
-                            </div>
+                        <div class="d-flex flex-column gap-2 ms-auto" style="width: 100%; max-width: 370px; zoom: 0.572;">
+                          <div class="d-flex justify-content-between align-items-baseline gap-4 text-secondary fs-5">
+                            <span class="fw-bold">ยอดที่ขอไป</span>
+                            <span class="fw-bold">{{ "{:,.2f}".format(borrowing_ticket.required_budget or 0) }}</span>
                           </div>
-
-                          <!-- รวมยอดเงินที่ใช้จ่าย -->
-                          <div>
-                            <div class="text-muted small fw-bold mb-1">รวมยอดเงินที่ใช้จ่าย</div>
-                            <div>
-                              <span class="fw-bold text-primary fs-4" id="sumAmountDisplay_{{ borrowing_ticket.id }}" data-budget="{{ borrowing_ticket.required_budget or 0 }}" data-existing-total="{{ borrowing_ticket.submitted_return_total or 0 }}">0.00</span>
-                              <span class="text-primary small ms-1" id="sumAmountUnit_{{ borrowing_ticket.id }}">บาท</span>
-                            </div>
+                          <div class="d-flex justify-content-between align-items-baseline gap-4 text-secondary fs-5">
+                            <span class="fw-bold">ยอดที่ส่งแล้ว</span>
+                            <span class="fw-bold">{{ "{:,.2f}".format(borrowing_ticket.submitted_return_total or 0) }}</span>
                           </div>
+                          <div class="border-top border-3 border-dark my-2" style="border-top-style: dashed !important;"></div>
+                          <div class="d-flex justify-content-between align-items-center gap-4 text-dark fs-4">
+                            <span class="fw-bold">ยอดครั้งนี้</span>
+                            <span class="fw-bold bg-info-subtle border border-info rounded-3 px-4 py-1" id="sumAmountDisplay_{{ borrowing_ticket.id }}" data-budget="{{ borrowing_ticket.required_budget or 0 }}" data-existing-total="{{ borrowing_ticket.submitted_return_total or 0 }}">0.00</span>
+                          </div>
+                          <div class="d-flex justify-content-between align-items-baseline gap-4 text-dark fs-4">
+                            <span class="fw-bold">ยอดคงค้าง</span>
+                            <span class="fw-bold" id="remainingAmountDisplay_{{ borrowing_ticket.id }}">{{ "{:,.2f}".format(borrowing_ticket.ticket_remaining or 0) }}</span>
+                          </div>
+                          <div class="text-end fw-bold fs-4 lh-1">=====</div>
+                          <span class="visually-hidden" id="sumAmountUnit_{{ borrowing_ticket.id }}">บาท</span>
                         </div>
                       </div>
                     </div>
@@ -462,6 +451,9 @@
                   {% elif borrowing_ticket.status|lower == 'มียอดคงค้าง' %}
                     {% set badge_class = 'bg-info text-dark' %}
                     {% set display_status = 'มียอดคงค้าง' %}
+                  {% elif borrowing_ticket.status|lower == 'ฎีกาถูกตีกลับจากกองคลัง' %}
+                    {% set badge_class = 'bg-warning text-dark' %}
+                    {% set display_status = 'ฎีกาถูกตีกลับจากกองคลัง' %}
                   {% elif borrowing_ticket.status|lower in ['ปฏิเสธ'] %}
                     {% set badge_class = 'bg-danger text-white' %}
                     {% set display_status = 'ปฏิเสธ' %}
@@ -556,6 +548,7 @@
               <option value="อนุมัติจ่ายเงิน">อนุมัติจ่ายเงิน</option>
               <option value="มียอดคงค้าง">มียอดคงค้าง</option>
               <option value="เคลียร์ยอดแล้ว">เคลียร์ยอดแล้ว</option>
+              <option value="ฎีกาถูกตีกลับจากกองคลัง">ฎีกาถูกตีกลับจากกองคลัง</option>
               <option value="ปฏิเสธ">ปฏิเสธ</option>
             </select>
           </div>
@@ -661,7 +654,7 @@
     function formatInputNumberOnBlur(element) {
       let value = element.value.replace(/,/g, "").replace(/[^0-9.]/g, "");
       const cleanNumber = parseFloat(value);
-      if (!isNaN(cleanNumber) && cleanNumber > 0) {
+      if (!isNaN(cleanNumber) && cleanNumber >= 0) {
           element.value = cleanNumber.toLocaleString("en-US", {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2
@@ -916,7 +909,7 @@
         </td>
         <td><input type="text" name="amount[]" class="form-control form-control-sm item-amount-input" value="0.00" required></td>
         <td>
-          <input type="file" name="proof_files_${document.getElementById(`receiptBody_${ticketId}`).rows.length}[]" accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm" multiple>
+          <input type="file" name="proof_files_${document.getElementById(`receiptBody_${ticketId}`).rows.length}[]" accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm">
         </td>
         <td class="text-center">
           <button type="button" class="btn btn-sm btn-outline-danger border-0" onclick="removeReceiptRow(this, ${ticketId})" title="ลบแถวนี้">
@@ -978,17 +971,26 @@
       const totalDisplay = document.getElementById(`sumAmountDisplay_${ticketId}`);
       const parcelInput = document.getElementById(`parcel_amount_${ticketId}`);
       total += parseFloat((parcelInput?.value || "0").replace(/,/g, "")) || 0;
-      total += parseFloat(totalDisplay?.dataset.existingTotal || "0") || 0;
+      const existingTotal = parseFloat(totalDisplay?.dataset.existingTotal || "0") || 0;
       if (totalDisplay) {
-        const isOverBudget = total > (parseFloat(totalDisplay.dataset.budget || "0") || 0);
+        const budget = parseFloat(totalDisplay.dataset.budget || "0") || 0;
+        const isOverBudget = total + existingTotal > budget;
         totalDisplay.classList.toggle("text-danger", isOverBudget);
-        totalDisplay.classList.toggle("text-primary", !isOverBudget);
+        totalDisplay.classList.toggle("bg-danger-subtle", isOverBudget);
+        totalDisplay.classList.toggle("bg-info-subtle", !isOverBudget);
         document.getElementById(`sumAmountUnit_${ticketId}`)?.classList.toggle("text-danger", isOverBudget);
-        document.getElementById(`sumAmountUnit_${ticketId}`)?.classList.toggle("text-primary", !isOverBudget);
         totalDisplay.innerText = total.toLocaleString("en-US", {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
         });
+        const remainingDisplay = document.getElementById(`remainingAmountDisplay_${ticketId}`);
+        if (remainingDisplay) {
+          remainingDisplay.innerText = (budget - existingTotal - total).toLocaleString("en-US", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+          });
+          remainingDisplay.classList.toggle("text-danger", isOverBudget);
+        }
       }
     }
 
@@ -1015,7 +1017,7 @@
           <div class="suggestions-box list-group position-absolute w-100 shadow-sm d-none" style="z-index: 1050;"></div>
         </div>
         <div class="col-md-5 d-flex gap-2 action-buttons-container">
-          <a href="#" class="btn btn-sm btn-outline-primary download-btn d-none" target="_blank" download>
+          <a href="#" class="btn btn-sm btn-outline-primary download-btn d-none" target="_blank" rel="noopener" download="announcement.pdf">
             <i class="bi bi-download me-1"></i> ดาวน์โหลด
           </a>
           <button type="button" class="btn btn-sm btn-outline-danger border-1" onclick="removeDocumentRow(this)">
@@ -1070,7 +1072,7 @@
         suggestionsBox.innerHTML = docs.map(doc => `
           <button type="button" 
                   class="list-group-item list-group-item-action small text-start" 
-                  onclick="selectAnnouncement(this, '${doc.id}', '${escapeHtml(doc.title)}', '${doc.download_url || doc.file_path || doc.url || ''}')">
+                  onclick="selectAnnouncement(this, '${doc.id}', '${escapeHtml(doc.title)}', '${doc.view_url || doc.url || doc.file_path || ''}')">
             <i class="bi bi-file-earmark-pdf text-danger me-1"></i> ${escapeHtml(doc.title)}
           </button>
         `).join('');
@@ -1289,23 +1291,21 @@
 
     function syncBankAccountInfo(selectElem) {
       const hiddenInput = document.getElementById('bank_account_info_id');
-      const inputValue = (selectElem?.value || '').trim();
       if (!hiddenInput || !selectElem) {
         return;
       }
 
-      const datalist = document.getElementById('bank_account_options');
-      if (!datalist || !inputValue) {
-        hiddenInput.value = '';
-        return;
-      }
-
-      const escapedValue = window.CSS && CSS.escape ? CSS.escape(inputValue) : inputValue.replace(/"/g, '\\"');
-      const matchingOption = datalist.querySelector(`option[value="${escapedValue}"]`);
-      hiddenInput.value = matchingOption ? (matchingOption.dataset.bankAccountId || '') : '';
+      const selectedOption = selectElem.options[selectElem.selectedIndex];
+      hiddenInput.value = selectedOption ? (selectedOption.dataset.bankAccountId || '') : '';
     }
 
     $(document).ready(function() {
+      $('#account_number').select2({
+        theme: 'bootstrap-5',
+        placeholder: 'พิมพ์เพื่อค้นหาหรือเลือกเลขที่บัญชี...',
+        allowClear: true,
+        width: '100%'
+      });
       syncBankAccountInfo(document.getElementById('account_number'));
 
       // เปลี่ยน Dropdown ผู้ยืมเงินให้พิมพ์ค้นหาได้

@@ -108,10 +108,14 @@
                     <span class="badge bg-primary text-white fw-bold px-3 py-2">อนุมัติแล้ว</span>
                   {% elif request.status == 'ส่งเบิกแล้ว' %}
                     <span class="badge bg-info text-white fw-bold px-3 py-2">ส่งเบิกแล้ว</span>
+                  {% elif request.status == 'ส่งเบิกครบแล้ว' %}
+                    <span class="badge bg-info text-white fw-bold px-3 py-2">ส่งเบิกครบแล้ว</span>
                   {% elif request.status == 'เบิกเงินสำเร็จ' %}
                     <span class="badge bg-success text-white fw-bold px-3 py-2">เบิกเงินสำเร็จ</span>
-                  {% elif request.status == 'ปฏิเสธ' %}
-                    <span class="badge bg-danger text-white fw-bold px-3 py-2">ปฏิเสธ</span>
+                  {% elif request.status == 'เคลียร์ยอดสำเร็จ' %}
+                    <span class="badge bg-success text-white fw-bold px-3 py-2">เคลียร์ยอดสำเร็จ</span>
+                  {% elif request.status == 'ยกเลิก' %}
+                    <span class="badge bg-danger text-white fw-bold px-3 py-2">ยกเลิก</span>
                   {% else %}
                     <span class="badge bg-secondary text-white fw-bold px-3 py-2">{{ request.status }}</span>
                   {% endif %}
@@ -120,8 +124,8 @@
                     <span class="badge bg-warning text-dark fw-bold px-3 py-2">กำลังดำเนินการ</span>
                   {% elif request.status == 'เบิกเงินแล้ว' %}
                     <span class="badge bg-success text-white fw-bold px-3 py-2">เบิกเงินแล้ว</span>
-                  {% elif request.status == 'ปฏิเสธ' %}
-                    <span class="badge bg-danger text-white fw-bold px-3 py-2">ปฏิเสธ</span>
+                  {% elif request.status == 'ยกเลิก' %}
+                    <span class="badge bg-danger text-white fw-bold px-3 py-2">ยกเลิก</span>
                   {% else %}
                     <span class="badge bg-secondary text-white fw-bold px-3 py-2">{{ request.status }}</span>
                   {% endif %}
@@ -130,8 +134,8 @@
                     <span class="badge bg-warning text-dark fw-bold px-3 py-2">กำลังดำเนินการ</span>
                   {% elif request.status == 'อนุมัติแล้ว' %}
                     <span class="badge bg-success text-white fw-bold px-3 py-2">อนุมัติแล้ว</span>
-                  {% elif request.status == 'ปฏิเสธ' %}
-                    <span class="badge bg-danger text-white fw-bold px-3 py-2">ปฏิเสธ</span>
+                  {% elif request.status == 'ยกเลิก' %}
+                    <span class="badge bg-danger text-white fw-bold px-3 py-2">ยกเลิก</span>
                   {% else %}
                     <span class="badge bg-secondary text-white fw-bold px-3 py-2">{{ request.status }}</span>
                   {% endif %}
@@ -143,7 +147,7 @@
                      class="btn btn-outline-dark btn-sm fw-bold" target="_blank">
                     <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
                   </a>
-                  {% if request.status == 'กำลังดำเนินการ' %}
+                  {% if request.status not in ['ยกเลิก', 'ส่งเบิกแล้ว', 'ส่งเบิกครบแล้ว', 'เบิกเงินสำเร็จ', 'เคลียร์ยอดสำเร็จ'] %}
                     {% if session.get('user_role') == 'secretary' %}
                       {% if request.form_type == '31' and request.withdrawal_proof_reference %}
                         <a href="{{ url_for('static', filename=request.withdrawal_proof_reference) }}" class="btn btn-outline-primary btn-sm fw-bold" target="_blank">
@@ -151,36 +155,24 @@
                         </a>
                       {% else %}
                         <button type="button"
-                                class="btn btn-primary btn-sm fw-bold px-3 py-1.5"
-                                data-popup-trigger="true"
-                                data-popup-title="ยืนยันการอนุมัติใบเบิก"
-                                data-popup-message="ระบบจะออกเลขที่ใบเบิกให้อัตโนมัติเมื่อยืนยันการอนุมัติ"
-                                data-popup-action="{{ url_for('advance_payment.approve_fund_request', request_id=request.id) }}"
-                                data-popup-confirm-text="ยืนยันการอนุมัติ"
-                                data-popup-confirm-class="btn-primary">
-                          อนุมัติใบเบิก
-                        </button>
-                        <button type="button"
                                 class="btn btn-danger btn-sm fw-bold px-3 py-1.5"
                                 data-popup-trigger="true"
-                                data-popup-title="สาเหตุของการปฏิเสธสัญญา"
-                                data-popup-message="กรุณาระบุเหตุผลสำหรับการปฏิเสธใบเบิก"
-                                data-popup-action="{{ url_for('advance_payment.reject_fund_request', request_id=request.id) }}"
-                                data-popup-confirm-text="ยืนยันการปฏิเสธ"
+                                data-popup-title="สาเหตุของการยกเลิกใบเบิก"
+                                data-popup-message="กรุณาระบุเหตุผลสำหรับการยกเลิกใบเบิก"
+                                data-popup-action="{{ url_for('advance_payment.cancel_fund_request', request_id=request.id) }}"
+                                data-popup-confirm-text="ยืนยันการยกเลิก"
                                 data-popup-confirm-class="btn-danger"
                                 data-popup-input-type="textarea"
-                                data-popup-input-name="rejection_comment"
-                                data-popup-input-placeholder="ระบุเหตุผลที่ปฏิเสธเอกสารสัญญา..."
+                                data-popup-input-name="cancellation_reason"
+                                data-popup-input-placeholder="ระบุเหตุผลที่ยกเลิกใบเบิก..."
                                 data-popup-input-required="true"
                                 data-popup-input-rows="2">
-                          ปฏิเสธ
+                          ยกเลิก
                         </button>
                       {% endif %}
-                    {% else %}
-                      <span class="text-muted small">รอผู้ดูแลเงินสดย่อยอนุมัติหรือปฏิเสธ</span>
                     {% endif %}
                   {% endif %}
-                  {% if request.form_type == '30' and request.status not in ['ปฏิเสธ', 'กำลังดำเนินการ'] %}
+                  {% if request.form_type == '30' and request.status not in ['ปฏิเสธ', 'ยกเลิก', 'กำลังดำเนินการ'] %}
                   <div class="d-flex justify-content-center align-items-center gap-1">
                     <a href="{{ url_for('advance_payment.submit_petty_cash_claim', fund_request_id=request.id) }}" 
                       class="btn btn-sm btn-outline-primary">

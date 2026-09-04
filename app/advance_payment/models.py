@@ -28,8 +28,10 @@ def _staff_org(staff):
 
 def _staff_position(staff):
     personal_info = getattr(staff, "personal_info", None)
-    job_position = getattr(personal_info, "job_position", None)
-    return getattr(job_position, "position", None)
+    return (
+        getattr(personal_info, "position", None)
+        or getattr(getattr(personal_info, "job_position", None), "position", None)
+    )
 
 
 def _staff_role(staff):
@@ -251,6 +253,14 @@ class ReturnDetail(db.Model):
     created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
     rejection_comment = Column(String(4000), nullable=True)
     closing_document_id = Column(Integer, ForeignKey("cash_mng_closing_documents.id"), nullable=True)
+    reference_number = Column(String(255), nullable=True)
+    reference_date = Column(Date, nullable=True)
+    product_code_id = Column(String(12), ForeignKey("product_codes.id"), nullable=True)
+    cost_center_id = Column(String(12), ForeignKey("cost_centers.id"), nullable=True)
+    iocode_id = Column(String(16), ForeignKey("iocodes.id"), nullable=True)
+    product_code = relationship("ProductCode")
+    cost_center = relationship("CostCenter")
+    iocode = relationship("IOCode")
 
     @property
     def borrowing_ticket(self):
@@ -439,7 +449,21 @@ class PettyCashSetting(db.Model):
     @property
     def account_number(self):
         account = self.bank_account_info
-        return getattr(account, "account_number", None)
+        if account is not None:
+            return getattr(account, "account_number", None)
+
+        # Keep legacy settings usable when the FK was not backfilled.
+        session = object_session(self)
+        if session is not None and self.org_id:
+            account = (
+                session.query(BankAccountInfo)
+                .filter_by(org_id=self.org_id, record_type="petty_cash")
+                .order_by(BankAccountInfo.id.asc())
+                .first()
+            )
+            if account is not None:
+                return account.account_number
+        return None
 
     @property
     def bank_account_info(self):
@@ -461,13 +485,23 @@ class BankAccountInfo(db.Model):
             "thai_name",
             name="uq_cash_mng_bank_account_infos_record_type_thai_name",
         ),
+        UniqueConstraint(
+            "account_number",
+            name="uq_cash_mng_bank_account_infos_account_number",
+        ),
     )
 
     id = Column(Integer, primary_key=True)
     record_type = Column(String(32), nullable=False)
+    org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)
     thai_name = Column(String(255), nullable=False)
-    account_number = Column(String(100), nullable=False)
+    account_number = Column(String(10), nullable=False)
     created_at = Column(DateTime, nullable=False, server_default=func.now()) # editable
+
+    @property
+    def org(self):
+        from app.models import Org
+        return _session_get(object_session(self), Org, self.org_id)
 
 
 class FundRequest(db.Model):
@@ -475,6 +509,7 @@ class FundRequest(db.Model):
 
     id = Column(Integer, primary_key=True)
     requester_id = Column(Integer, ForeignKey("staff_account.id"), nullable=False)
+    creator_id = Column(Integer, ForeignKey("staff_account.id"), nullable=True, index=True)
     org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)
     borrowing_ticket_id = Column(Integer, ForeignKey("cash_advance_borrowing_tickets.id"), nullable=True)
     form_type = Column(String(10), nullable=False)
@@ -482,7 +517,7 @@ class FundRequest(db.Model):
     request_date = Column(Date, nullable=False)
     receive_interest = Column(Date, nullable=True)
     withdraw_intrest = Column(Date, nullable=True)
-    status = Column(String(64), nullable=False, default="กำลังดำเนินการ")
+    status = Column(String(64), nullable=False, default="อนุมัติแล้ว")
     amount = Column(Numeric(12, 2), nullable=False, default=0)
     created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
     purpose = Column(String(1000), nullable=True)
@@ -529,6 +564,10 @@ class FundRequest(db.Model):
     def requester_position(self):
         requester = _session_get(object_session(self), StaffAccount, self.requester_id)
         return getattr(requester, "position", None)
+
+    @property
+    def creator(self):
+        return _session_get(object_session(self), StaffAccount, self.creator_id)
 
     @property
     def account_number(self):
@@ -598,6 +637,14 @@ class PettyCashClaimDetail(db.Model):
     closing_document_id = Column(Integer, ForeignKey("cash_mng_closing_documents.id"), nullable=True)
     old_closing_document_name = Column(String(255), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
+    reference_number = Column(String(255), nullable=True)
+    reference_date = Column(Date, nullable=True)
+    product_code_id = Column(String(12), ForeignKey("product_codes.id"), nullable=True)
+    cost_center_id = Column(String(12), ForeignKey("cost_centers.id"), nullable=True)
+    iocode_id = Column(String(16), ForeignKey("iocodes.id"), nullable=True)
+    product_code = relationship("ProductCode")
+    cost_center = relationship("CostCenter")
+    iocode = relationship("IOCode")
 
     @property
     def fund_request(self):

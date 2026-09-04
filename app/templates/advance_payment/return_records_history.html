@@ -9,6 +9,40 @@
   <p class="text-muted mb-0">รวบรวม ตรวจสอบ ค้นหา และคัดกรองข้อมูลประวัติเอกสารส่งใช้เงินยืมและรายการส่งคืนพัสดุที่ผูกกับใบยืมเงินในระบบ</p>
 </header>
 
+<section class="mb-4">
+  <div class="row g-3">
+    <div class="col-md-6">
+      <a href="{{ url_for('advance_payment.return_records_history', status='รอตรวจสอบ') }}" class="text-decoration-none text-dark d-block h-100">
+        <div class="card border rounded-4 shadow-sm bg-white p-3 h-100 clickable-card">
+          <div class="text-muted small fw-bold text-uppercase d-flex justify-content-between">
+            <span>รายการที่รอการตรวจสอบ</span>
+            <i class="bi bi-clock-history text-warning"></i>
+          </div>
+          <div class="fs-2 fw-bold text-warning mt-2">{{ pending_review_count or 0 }}</div>
+          <span class="text-primary small mt-1">
+            <i class="bi bi-search"></i> คลิกเพื่อกรองรายการ
+          </span>
+        </div>
+      </a>
+    </div>
+
+    <div class="col-md-6">
+      <a href="{{ url_for('advance_payment.return_records_history', status='ผ่านการตรวจสอบ') }}" class="text-decoration-none text-dark d-block h-100">
+        <div class="card border rounded-4 shadow-sm bg-white p-3 h-100 clickable-card">
+          <div class="text-muted small fw-bold text-uppercase d-flex justify-content-between">
+            <span>รอการตั้งฎีกา</span>
+            <i class="bi bi-file-earmark-check text-primary"></i>
+          </div>
+          <div class="fs-2 fw-bold text-primary mt-2">{{ proofed_count or 0 }}</div>
+          <span class="text-primary small mt-1">
+            <i class="bi bi-arrow-right-circle"></i> คลิกเพื่อกรองรายการ
+          </span>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>
+
 <!-- Section กรองและค้นหาข้อมูล -->
 <section class="p-4 border rounded-4 bg-white shadow-sm mb-4">
   <div class="row g-3">
@@ -30,6 +64,7 @@
         <option value="กำลังตรวจสอบ">กำลังตรวจสอบ</option>
         <option value="ผ่านการตรวจสอบ">ผ่านการตรวจสอบ</option>
         <option value="เอกสารตั้งฎีกา">เอกสารตั้งฎีกา</option>
+        <option value="ฎีกาถูกตีกลับจากกองคลัง">ฎีกาถูกตีกลับจากกองคลัง</option>
         <option value="ล้างลูกหนี้เงินยืม">ล้างลูกหนี้เงินยืม</option>
         <option value="ปฏิเสธ">ปฏิเสธ</option>
       </select>
@@ -161,6 +196,8 @@
                   </span>
                 {% elif st in ['เอกสารตั้งฎีกา', 'เอกสารตั้งฎีกา'] %}
                   <span class="badge bg-secondary text-white">เอกสารตั้งฎีกา</span>
+                {% elif st in ['ฎีกาถูกตีกลับจากกองคลัง', 'ฎีกาถูกตีกลับจากกองคลัง'] %}
+                  <span class="badge bg-danger text-white">ฎีกาถูกตีกลับจากกองคลัง</span>
                 {% elif st in ['ล้างลูกหนี้เงินยืม', 'ล้างลูกหนี้เงินยืม', 'ได้รับเงินคืนแล้ว'] %}
                   <span class="badge bg-success text-white">
                     {% if record.record_type == 'petty_cash' %}ได้รับเงินคืนแล้ว{% else %}ล้างลูกหนี้เงินยืม{% endif %}
@@ -288,6 +325,7 @@
       else if (['กำลังตรวจสอบ', 'กำลังตรวจสอบ'].includes(rStatusRaw)) rStatus = 'กำลังตรวจสอบ';
       else if (['ผ่านการตรวจสอบ', 'ผ่านการตรวจสอบ', 'ได้รับเอกสารแล้ว', 'ได้รับเอกสารแล้ว'].includes(rStatusRaw)) rStatus = 'ผ่านการตรวจสอบ';
       else if (['เอกสารตั้งฎีกา', 'เอกสารตั้งฎีกา'].includes(rStatusRaw)) rStatus = 'เอกสารตั้งฎีกา';
+      else if (['ฎีกาถูกตีกลับจากกองคลัง', 'ฎีกาถูกตีกลับจากกองคลัง'].includes(rStatusRaw)) rStatus = 'ฎีกาถูกตีกลับจากกองคลัง';
       else if (['ล้างลูกหนี้เงินยืม', 'ล้างลูกหนี้เงินยืม', 'ได้รับเงินคืนแล้ว'].includes(rStatusRaw)) rStatus = 'ล้างลูกหนี้เงินยืม';
       else if (['ปฏิเสธed', 'ปฏิเสธ', 'ปฏิเสธ'].includes(rStatusRaw)) rStatus = 'ปฏิเสธ';
 
@@ -344,6 +382,13 @@
     const urlParams = new URLSearchParams(window.location.search);
     let statusParam = urlParams.get('status');
     let typeParam = urlParams.get('type');
+
+    if (statusParam) {
+      const statusFilter = document.getElementById("statusFilter");
+      if (statusFilter) {
+        statusFilter.value = statusParam;
+      }
+    }
     
     // ดึงค่าประเภทจาก URL Parameter เพื่อสั่งสลับ Tab อัตโนมัติ (ถ้ามี)
     if (typeParam) {

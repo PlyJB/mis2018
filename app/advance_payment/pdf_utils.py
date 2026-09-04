@@ -15,6 +15,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.graphics.shapes import Drawing, Circle, Rect
 from .models import db, BankAccountInfo, StaffAccount, PettyCashSetting
 from app.models import Org
+from app.staff.models import StaffHeadPosition
 
 
 INTEREST_PERIOD_MONTH_LABELS = {
@@ -103,6 +104,32 @@ def get_department_info_from_api(dept_name):
     if dept_data:
         head_info = dept_data.get("head_of_department", {})
         controller_info = dept_data.get("account_controller", {})
+
+        # Signature data must come from staff_head_positions, not the staff
+        # member's personal position or the legacy Org.head email field.
+        org = None
+        raw_dept_name = str(dept_name or "").strip()
+        if raw_dept_name.isdigit():
+            org = Org.query.get(int(raw_dept_name))
+        if org is None:
+            org = Org.query.filter_by(name=raw_dept_name).first()
+        head_position_record = (
+            StaffHeadPosition.query
+            .filter_by(org_id=org.id)
+            .order_by(StaffHeadPosition.id.desc())
+            .first()
+            if org else None
+        )
+        if head_position_record:
+            head_staff = head_position_record.staff
+            head_info = {
+                "name": (
+                    getattr(head_staff, "name", None)
+                    or getattr(head_staff, "fullname", None)
+                    or head_info.get("name", "")
+                ),
+                "position": head_position_record.position,
+            }
         return {
             "head": head_info.get("name", "......................................................."),
             "head_position": head_info.get("position", "หัวหน้าฝ่าย"),
@@ -168,6 +195,28 @@ def _get_bank_account_info_for_account_number(account_number):
         return None
 
     return db.session.query(BankAccountInfo).filter_by(account_number=normalized_account_number).first()
+
+
+def _get_bank_account_info_for_petty_cash_setting(setting):
+    """Resolve the petty-cash account from the setting's FK and organization."""
+    if not setting:
+        return None
+
+    bank_account_info_id = getattr(setting, "bank_account_info_id", None)
+    if bank_account_info_id:
+        account = db.session.query(BankAccountInfo).get(bank_account_info_id)
+        if account:
+            return account
+
+    org_id = getattr(setting, "org_id", None)
+    if org_id:
+        return (
+            db.session.query(BankAccountInfo)
+            .filter_by(org_id=org_id, record_type="petty_cash")
+            .order_by(BankAccountInfo.id.asc())
+            .first()
+        )
+    return None
 
 
 # =========================================================================
@@ -421,9 +470,12 @@ def generate_fnar02_pdf(ticket):
     ]))
     
     story.append(master_table)
-    story.append(Spacer(1, 10))
-    p_note = Paragraph("<b>หมายเหตุ:</b> ใบเสร็จแต่ละใบจะต้องมียอดไม่เกิน -100,000- บาท", styles['ThaiNormal'])
-    story.append(p_note)
+    story.append(Spacer(1, 8))
+    footer_text = Paragraph(
+        "หมายเหตุ: ใบเสร็จแต่ละใบจะต้องมียอดไม่เกิน -100,000- บาท",
+        styles['ThaiFooter']
+    )
+    story.append(footer_text)
 
     # สร้างและส่งคืน PDF Bytes
     doc.build(story)
@@ -451,6 +503,8 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
 
     fund_request = getattr(claim, "fund_request", None)
     setting = getattr(claim, "setting", None)
+    if setting is None:
+        setting = db.session.query(PettyCashSetting).get(getattr(claim, "petty_cash_setting_id", None))
     requester = getattr(claim, "user", None)
 
     requester_org = getattr(getattr(requester, "personal_info", None), "org", None)
@@ -554,12 +608,18 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
     request_account_number = getattr(borrowing_ticket, "account_number", None) if borrowing_ticket else None
     if request_account_number:
         bank_account_info = _get_bank_account_info_for_account_number(request_account_number)
-    if not bank_account_info and setting and getattr(setting, "account_number", None):
-        bank_account_info = _get_bank_account_info_for_account_number(setting.account_number)
+    if not bank_account_info:
+        bank_account_info = _get_bank_account_info_for_petty_cash_setting(setting)
+
+    setting_account_number = (
+        getattr(bank_account_info, "account_number", None)
+        or getattr(setting, "account_number", None)
+        or ""
+    )
 
     account_number = (
         (request_account_number or "").strip()
-        or (getattr(setting, "account_number", "") or "").strip()
+        or setting_account_number.strip()
         or (bank_account_info.account_number if bank_account_info else "....................................")
     )
     account_name = (
@@ -571,6 +631,12 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
     fiscal_year_date = request_date or claim_date
     fiscal_year_be = convert_to_fiscal_year(fiscal_year_date.date()) + 543 if fiscal_year_date else None
     fiscal_year_label = str(fiscal_year_be) if fiscal_year_be else "................"
+    reference_number = getattr(claim, "reference_number", None) or claim_number
+    reference_date = getattr(claim, "reference_date", None)
+    reference_date_label = get_thai_month_year(reference_date) if reference_date else date_thai
+    product_name = getattr(getattr(claim, "product_code", None), "name", None) or "........................................"
+    cost_center_label = getattr(getattr(claim, "cost_center", None), "id", None) or "........................................"
+    mission_label = getattr(getattr(claim, "iocode", None), "mission_id", None) or "........................................"
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -678,8 +744,8 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
 
     if is_ticket_return:
         body_1 = (
-            f"ตามหนังสือที่ {getattr(fund_request, 'aip_ref_no', None) or claim_number} "
-            f"ลงวันที่ {date_thai} ซึ่งคณะได้อนุมัติให้{request_purpose}นั้น"
+            f"ตามหนังสือที่ {reference_number} ลงวันที่ {reference_date_label} "
+            f"ซึ่งคณะได้อนุมัติให้{request_purpose}นั้น"
         )
         body_2 = (
             f"ในการนี้ {department_name} ดำเนินการดังกล่าวเสร็จสิ้นแล้ว "
@@ -691,7 +757,7 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
         )
     else:
         body_1 = (
-            f"ตามหนังสือที่ {claim_number} ลงวันที่ {date_thai} "
+            f"ตามหนังสือที่ {reference_number} ลงวันที่ {reference_date_label} "
             f"ซึ่งคณะได้รับการอนุมัติให้ดำเนินการแล้ว"
         )
         body_2 = (
@@ -738,7 +804,7 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
 
     total_table = Table(
         [[
-            Paragraph("รวมทั้งสิ้น", claim_right),
+            Paragraph("รวมทั้งสิ้น ", claim_right),
             Paragraph(f"{amount_text}", claim_left),
             Paragraph(f"{amount_numeric} บาท", claim_right),
         ]],
@@ -768,9 +834,9 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
     else:
         ref_text = (
             f"โดยเบิกจากเงินปีงบประมาณ {fiscal_year_label} "
-            f"ผลผลิต ........................................ "
-            f"รหัสศูนย์ต้นทุน ........................................ "
-            f"รหัสใบสั่งงานภายใน ........................................ "
+            f"ผลผลิต {product_name} "
+            f"รหัสศูนย์ต้นทุน {cost_center_label} "
+            f"รหัสใบสั่งงานภายใน {mission_label} "
             f"เอกสารฉบับนี้ส่งคืนบัญชี {account_name} "
             f"เลขที่บัญชี {account_number} เพื่อทำการขอเบิกเงินเข้าบัญชีเงินสดย่อยของหน่วยงานต่อไป "
             f"ดังรายละเอียดตามเอกสารที่แนบมาพร้อมนี้"
@@ -855,6 +921,12 @@ def generate_ticket_return(return_detail):
     )
     fiscal_year = convert_to_fiscal_year(ticket_date.date()) + 543 if ticket_date else None
     fiscal_year_label = str(fiscal_year) if fiscal_year else "................"
+    reference_number = getattr(return_detail, "reference_number", None) or aip_ref_no
+    reference_date = getattr(return_detail, "reference_date", None)
+    reference_date_label = get_thai_month_year(reference_date) if reference_date else date_thai
+    product_name = getattr(getattr(return_detail, "product_code", None), "name", None) or "........................................"
+    cost_center_label = getattr(getattr(return_detail, "cost_center", None), "id", None) or "........................................"
+    mission_label = getattr(getattr(return_detail, "iocode", None), "mission_id", None) or "........................................"
 
     return_body = ParagraphStyle(
         name="ThaiTicketReturnBody",
@@ -955,7 +1027,7 @@ def generate_ticket_return(return_detail):
     story.extend([info_table, Spacer(1, 18)])
 
     story.append(Paragraph(
-        f"ตามหนังสือที่...............ลงวันที่.................."
+        f"ตามหนังสือที่ {reference_number} ลงวันที่ {reference_date_label} "
         f"ซึ่งคณะได้อนุมัติให้{request_purpose}นั้น",
         return_body,
     ))
@@ -989,7 +1061,7 @@ def generate_ticket_return(return_detail):
         story.extend([item_table, Spacer(1, 4)])
 
     total_table = Table([[
-        Paragraph("รวมทั้งสิ้น ", return_right),
+        Paragraph("รวมทั้งสิ้น  ", return_right),
         Paragraph(amount_text, return_left),
         Paragraph(f"{amount_numeric} บาท", return_right),
     ]], colWidths=[55, 250, 80])
@@ -1002,11 +1074,9 @@ def generate_ticket_return(return_detail):
     story.extend([total_table, Spacer(1, 10)])
 
     story.append(Paragraph(
-        f"โดยเบิกจากเงินปีงบประมาณ {fiscal_year_label} ผลผลิต "
-        f"........................................ รหัสศูนย์ต้นทุน "
-        f"........................................ หมายเลขรหัสศูนย์ต้นทุน "
-        f"........................................ รหัสใบสั่งงานภายใน "
-        f"........................................ เอกสารฉบับนี้ส่งคืนบัญชีเงินยืม "
+        f"โดยเบิกจากเงินปีงบประมาณ {fiscal_year_label} ผลผลิต {product_name} "
+        f"รหัสศูนย์ต้นทุน {cost_center_label} รหัสใบสั่งงานภายใน {mission_label} "
+        f"เอกสารฉบับนี้ส่งคืนบัญชีเงินยืม "
         f"บย.{ticket_number} "
         f"เพื่อทำการขอเบิกเงินคืนเข้าบัญชีเงินสดย่อยของหน่วยงานต่อไป "
         f"ดังรายละเอียดตามเอกสารที่แนบมาพร้อมนี้",

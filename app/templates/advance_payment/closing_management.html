@@ -297,6 +297,7 @@
                           <th scope="col" class="small fw-bold text-end">ยอดเงิน</th>
                           <th scope="col" class="small fw-bold text-center">วันที่ส่งเอกสาร</th>
                           <th scope="col" class="small fw-bold text-center">สถานะ</th>
+                          <th scope="col" class="small fw-bold text-center">ตรวจสอบ</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -308,22 +309,41 @@
                             <td class="text-end fw-bold text-primary">{{ "{:,.2f}".format(ret.amount_spent or 0) }}</td>
                             <td class="text-center small">{{ ret.created_at|thai_date if ret.created_at else '-' }}</td>
                             <td class="text-center"><span class="badge bg-secondary text-white px-2.5 py-1">{{ ret.status or '-' }}</span></td>
+                            <td class="text-center">
+                              <a href="{{ url_for('advance_payment.view_return_proof_detail', return_id=ret.id) }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-eye"></i>
+                              </a>
+                            </td>
                           </tr>
                         {% endfor %}
                         {% for pr in result.parcel_returns %}
                           <tr class="table-warning-subtle">
                             <td class="ps-3"><span class="badge bg-warning-subtle text-warning-emphasis border px-2.5 py-1">ส่งคืนพัสดุ</span></td>
-                            <td><div class="fw-bold text-dark">{{ pr.display_ticket_number or '-' }}</div></td>
+                            <td>
+                              <div class="fw-bold text-dark">{{ pr.display_ticket_number or '-' }}</div>
+                              <small class="text-muted">Ticket ID: {{ pr.display_ticket_id or pr.ticket_id or '-' }}</small>
+                            </td>
                             <td><div class="fw-bold text-dark">{{ pr.display_borrower_name or '-' }}</div><small class="text-muted">{{ pr.display_subject_name or '-' }}</small></td>
                             <td class="text-end fw-bold text-primary">{{ "{:,.2f}".format(pr.amount_spent or 0) }}</td>
                             <td class="text-center small">{{ pr.created_at|thai_date if pr.created_at else '-' }}</td>
                             <td class="text-center"><span class="badge bg-secondary text-white px-2.5 py-1">{{ pr.status or '-' }}</span></td>
+                            <td class="text-center">
+                              {% if pr.display_ticket_id %}
+                                <a href="{{ url_for('advance_payment.verification_view', ticket_id=pr.display_ticket_id) }}" title="ดูข้อมูลการส่งรายการพัสดุ"  class="btn btn-sm btn-outline-secondary">
+                                  <i class="bi bi-eye"></i>
+                                </a>
+                              {% else %}
+                                <span class="text-muted small">-</span>
+                              {% endif %}
+                            </td>
                           </tr>
                         {% endfor %}
                         {% for petty in result.petty_cash %}
                           <tr class="table-success-subtle">
                             <td class="ps-3"><span class="badge bg-success-subtle text-success-emphasis border px-2.5 py-1">เบิกจ่ายเงินสดย่อย</span></td>
-                            <td><div class="fw-bold text-dark">{{ petty.claim_number or '-' }}</div></td>
+                            <td>
+                              <div class="fw-bold text-dark">{{ (petty.fund_request.ticket_number if petty.fund_request else none) or petty.claim_number or '-' }}</div>
+                            </td>
                             <td><div class="fw-bold text-dark">{{ petty.department_name }}</div><small class="text-muted">ผู้เบิก: {{ petty.requester_name or petty.name or '-' }}</small></td>
                             <td class="text-end fw-bold text-primary">{{ "{:,.2f}".format(petty.amount or 0) }}</td>
                             <td class="text-center small">{{ petty.created_at|thai_date if petty.created_at else '-' }}</td>
@@ -333,6 +353,11 @@
                               {% else %}
                                 <span class="badge bg-success text-white border px-2.5 py-1">{{ petty.status or '-' }}</span>
                               {% endif %}
+                            </td>
+                            <td class="text-center">
+                              <a href="{{ url_for('advance_payment.petty_cash_claim_detail', claim_id=petty.id) }}" title="ดูข้อมูลการส่งรายการพัสดุ"  class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-eye"></i>
+                              </a>
                             </td>
                           </tr>
                         {% endfor %}
@@ -400,6 +425,8 @@
                 <td class="text-center">
                   {% if ret.status == "ล้างลูกหนี้เงินยืม" %}
                     <span class="badge bg-success border px-2.5 py-1">ล้างลูกหนี้เงินยืม</span>
+                  {% elif ret.status == "ฎีกาถูกตีกลับจากกองคลัง" %}
+                    <span class="badge bg-danger text-dark border px-2.5 py-1">ฎีกาถูกตีกลับจากกองคลัง</span>
                   {% elif ret.closing_document_id or ret.status == "เอกสารตั้งฎีกา" %}
                     <span class="badge bg-secondary text-white px-2.5 py-1">เอกสารตั้งฎีกา</span>
                   {% else %}
@@ -417,6 +444,7 @@
                 </td>
                 <td>
                   <div class="fw-bold text-dark">{{ pr.display_ticket_number or '-' }}</div>
+                  <small class="text-muted">Ticket ID: {{ pr.display_ticket_id or pr.ticket_id or '-' }}</small>
                 </td>
                 <td>
                   <div class="fw-bold text-dark">{{ pr.display_borrower_name or '-' }}</div>
@@ -451,7 +479,7 @@
                   <span class="badge bg-success-subtle text-success-emphasis border px-2.5 py-1">เบิกจ่ายเงินสดย่อย</span>
                 </td>
                 <td>
-                  <div class="fw-bold text-dark">{{ petty.fund_request.ticket_number or ' ' }}</div>
+                  <div class="fw-bold text-dark">{{ (petty.fund_request.ticket_number if petty.fund_request else none) or petty.claim_number or '-' }}</div>
                 </td>
                 <td>
                   <div class="fw-bold text-dark">{{ petty.department_name }}</div>

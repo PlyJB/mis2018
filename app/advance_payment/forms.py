@@ -1,6 +1,6 @@
 from flask import current_app
 from wtforms import DateField, DecimalField, Form, PasswordField, SelectField, StringField, SubmitField
-from wtforms.validators import DataRequired, NumberRange, Optional, ValidationError
+from wtforms.validators import DataRequired, NumberRange, Optional, ValidationError, Length
 from datetime import date
 from .models import db, StaffAccount
 
@@ -68,7 +68,13 @@ class BankAccountInfoForm(Form):
     record_type = SelectField("ประเภทข้อมูล", validators=[DataRequired(message="กรุณาเลือกประเภทข้อมูล")])
     thai_name = StringField("ชื่อภาษาไทย", validators=[DataRequired(message="กรุณากรอกชื่อภาษาไทย")])
     created_at = StringField("วันที่", validators=[DataRequired(message="กรุณากรอกวันที่")])
-    account_number = StringField("เลขที่บัญชี", validators=[DataRequired(message="กรุณากรอกเลขที่บัญชี")])
+    account_number = StringField(
+        "เลขที่บัญชี",
+        validators=[
+            DataRequired(message="กรุณากรอกเลขที่บัญชี"),
+            Length(max=10, min=10, message="เลขที่บัญชีต้องมี 10 ตัวอักษร")
+        ]
+    )
     submit = SubmitField("บันทึกข้อมูล")
 
 class PettyCashClaimItemForm(Form):

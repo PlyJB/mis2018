@@ -51,12 +51,17 @@
               <div class="row g-3 mb-4 p-3 bg-light rounded-3 border mt-3">
                 <div class="col-md-6">
                     <label for="requester_input" class="form-label fw-bold text-muted small">ชื่อ-นามสกุล ผู้ขอยืม <span class="text-danger">*</span></label>
-                    <input type="text" name="requester_name" id="requester_input" list="borrower_list" class="form-control bg-white" placeholder="พิมพ์เพื่อค้นหา หรือเลือกพนักงาน..." autocomplete="off" required oninput="onBorrowerChange()">
-                    <datalist id="borrower_list">
-                      {% for emp in department_employees %}
-                        <option value="{{ emp.name }}" label="{{ emp.name }} ({{ emp.position }})"></option>
-                      {% endfor %}
-                    </datalist>
+                    {% if is_secretary %}
+                      <select name="requester_id" id="requester_input" class="form-select bg-white" required onchange="onBorrowerChange()">
+                        <option value="">พิมพ์เพื่อค้นหา หรือเลือกพนักงาน...</option>
+                        {% for emp in department_employees %}
+                          <option value="{{ emp.id }}" {% if form.requester_name.data == emp.name %}selected{% endif %}>{{ emp.name }}{% if emp.position %} ({{ emp.position }}){% endif %}</option>
+                        {% endfor %}
+                      </select>
+                    {% else %}
+                      <input type="text" id="requester_input" class="form-control bg-light" value="{{ current_user_display_name }}" readonly>
+                      <input type="hidden" name="requester_id" value="{{ session.get('user_id') }}">
+                    {% endif %}
                 </div>
                 <div class="col-md-6">
                     <label for="requester_position_input" class="form-label fw-bold text-muted small">ตำแหน่ง</label>
@@ -261,9 +266,15 @@
     const departmentEmployees = {{ department_employees | tojson }};
 
     function loadDepartmentEmployees() {
-      const defaultValue = {{ (form.requester_name.data or '') | tojson }};
+      const requesterInput = document.getElementById("requester_input");
+      if (!requesterInput || requesterInput.tagName !== "SELECT") {
+        return;
+      }
+      const defaultName = {{ (form.requester_name.data or '') | tojson }};
+      const defaultEmployee = departmentEmployees.find(emp => emp.name === defaultName);
+      const defaultValue = defaultEmployee ? String(defaultEmployee.id) : '';
       if (defaultValue) {
-        document.getElementById("requester_input").value = defaultValue;
+        requesterInput.value = defaultValue;
         onBorrowerChange();
       }
     }
@@ -271,7 +282,10 @@
     function onBorrowerChange() {
       const input = document.getElementById("requester_input");
       const positionInput = document.getElementById("requester_position_input");
-      const matchedEmp = departmentEmployees.find(emp => emp.name === input.value);
+      if (!input || input.tagName !== "SELECT") {
+        return;
+      }
+      const matchedEmp = departmentEmployees.find(emp => String(emp.id) === String(input.value));
       
       if (matchedEmp) {
         positionInput.value = matchedEmp.position;
@@ -318,6 +332,16 @@
     document.addEventListener("DOMContentLoaded", function () {
       loadDepartmentEmployees();
 
+      const requesterInput = document.getElementById("requester_input");
+      if (requesterInput && requesterInput.tagName === "SELECT" && window.jQuery && typeof $('#requester_input').select2 === 'function') {
+        $('#requester_input').select2({
+          theme: 'bootstrap-5',
+          placeholder: 'พิมพ์เพื่อค้นหา หรือเลือกพนักงาน...',
+          allowClear: true,
+          width: '100%'
+        });
+      }
+
       const radio30 = document.getElementById("form_type_30");
       const radio31 = document.getElementById("form_type_31");
       const radio32 = document.getElementById("form_type_32");
@@ -325,7 +349,7 @@
       const section31 = document.getElementById("section_form_31");
       const section32 = document.getElementById("section_form_32");
       const borrowerSection = document.getElementById("section_borrower_info");
-      const requesterInput = document.getElementById("requester_input");
+      const requesterIsEditable = requesterInput && requesterInput.tagName === "SELECT";
       const receiptContainer = document.getElementById("receiptTableContainer");
       const borrowingTicketSelect = document.getElementById("borrowing_ticket_id");
       const borrowingTicketBorrowerPreview = document.getElementById("borrowing_ticket_borrower_preview");
@@ -363,9 +387,9 @@
         }
 
         if (radio32 && radio32.checked && option) {
-          if (requesterInput) requesterInput.value = borrower;
+          if (requesterIsEditable && requesterInput) requesterInput.value = borrower;
           const requesterPositionInput = document.getElementById("requester_position_input");
-          if (requesterPositionInput) requesterPositionInput.value = option.dataset.position || "";
+          if (requesterIsEditable && requesterPositionInput) requesterPositionInput.value = option.dataset.position || "";
           const departmentInput = document.getElementById("department_input");
           if (departmentInput) departmentInput.value = option.dataset.department || "";
           const accountNumberInput = document.getElementById("account_number_input");
@@ -432,7 +456,7 @@
           receiptContainer.style.display = "block";
           
           if (inputPurpose) inputPurpose.setAttribute("required", "required");
-          if (requesterInput) requesterInput.setAttribute("required", "required");
+          if (requesterIsEditable && requesterInput) requesterInput.setAttribute("required", "required");
           if (proofFileInput) proofFileInput.removeAttribute("required"); // Disable requirement for Form 30
           
           toggleTableRequired(true);
@@ -446,7 +470,7 @@
           receiptContainer.style.display = "block";
 
           if (inputPurpose) inputPurpose.setAttribute("required", "required");
-          if (requesterInput) requesterInput.setAttribute("required", "required");
+          if (requesterIsEditable && requesterInput) requesterInput.setAttribute("required", "required");
           if (proofFileInput) proofFileInput.removeAttribute("required");
 
           toggleTableRequired(false);
@@ -466,7 +490,7 @@
           setBorrowingTicketMode(false);
           
           if (inputPurpose) inputPurpose.removeAttribute("required");
-          if (requesterInput) requesterInput.setAttribute("required", "required");
+          if (requesterIsEditable && requesterInput) requesterInput.setAttribute("required", "required");
           if (proofFileInput) proofFileInput.setAttribute("required", "required"); // Enable requirement for Form 31
           
           toggleTableRequired(false);
@@ -500,9 +524,9 @@
       mainForm.addEventListener("submit", function(e) {
         e.preventDefault();
 
-        if (mainForm.dataset.popupConfirmed === "true") {
+        if (radio30.checked && mainForm.dataset.popupConfirmed === "true") {
           delete mainForm.dataset.popupConfirmed;
-        } else {
+        } else if (radio30.checked) {
           window.openAppPopup({
             title: "ยืนยันการส่งแบบฟอร์ม",
             message: "เงินสดย่อยจ่ายได้ครั้งละไม่เกินสองหมื่นบาท",

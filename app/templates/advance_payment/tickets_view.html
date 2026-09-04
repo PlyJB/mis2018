@@ -10,6 +10,55 @@
   <p class="text-muted mb-0">ตรวจสอบ ค้นหา และคัดกรองรายการสัญญาเงินยืมเงินทดรองจ่ายทั้งหมดในระบบ</p>
 </header>
 
+<section class="mb-4">
+  <div class="row g-3">
+    <div class="col-md-4">
+      <a href="{{ url_for('advance_payment.tickets_view', filter='near_due') }}" class="text-decoration-none text-dark d-block h-100">
+        <div class="card border rounded-4 shadow-sm bg-white p-3 h-100 clickable-card">
+          <div class="text-muted small fw-bold text-uppercase d-flex justify-content-between">
+            <span>สัญญาเงินยืมใกล้ครบกำหนด (15 วัน)</span>
+            <i class="bi bi-exclamation-circle text-warning"></i>
+          </div>
+          <div class="fs-2 fw-bold text-warning mt-2">{{ near_due_count or 0 }}</div>
+          <span class="text-primary small mt-1">
+            <i class="bi bi-search"></i> คลิกเพื่อดูรายการ
+          </span>
+        </div>
+      </a>
+    </div>
+
+    <div class="col-md-4">
+      <a href="{{ url_for('advance_payment.tickets_view', filter='overdue') }}" class="text-decoration-none text-dark d-block h-100">
+        <div class="card border rounded-4 shadow-sm bg-white p-3 h-100 clickable-card">
+          <div class="text-muted small fw-bold text-uppercase d-flex justify-content-between">
+            <span>สัญญาเงินยืมที่เลยกำหนดส่ง</span>
+            <i class="bi bi-x-circle text-danger"></i>
+          </div>
+          <div class="fs-2 fw-bold text-danger mt-2">{{ overdue_count or 0 }}</div>
+          <span class="text-primary small mt-1">
+            <i class="bi bi-search"></i> คลิกเพื่อดูรายการ
+          </span>
+        </div>
+      </a>
+    </div>
+
+    <div class="col-md-4">
+      <a href="{{ url_for('advance_payment.tickets_view', filter='pending_debt') }}" class="text-decoration-none text-dark d-block h-100">
+        <div class="card border rounded-4 shadow-sm bg-white p-3 h-100 clickable-card">
+          <div class="text-muted small fw-bold text-uppercase d-flex justify-content-between">
+            <span>ยอดหนี้คงค้างทั้งหมด</span>
+            <i class="bi bi-wallet2 text-danger"></i>
+          </div>
+          <div class="fs-2 fw-bold text-danger mt-2">{{ "{:,.2f}".format(shadow_sum_debt or 0.00) }}</div>
+          <span class="text-primary small mt-1">
+            <i class="bi bi-search"></i> คลิกเพื่อดูรายการ
+          </span>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>
+
 <!-- Filter Controls Section -->
 <section class="p-4 border rounded-4 bg-white shadow-sm mb-4">
   <div class="row g-3">
@@ -33,6 +82,7 @@
         <option value="อนุมัติจ่ายเงิน">อนุมัติจ่ายเงิน</option>
         <option value="มียอดคงค้าง">มียอดคงค้าง</option>
         <option value="เคลียร์ยอดแล้ว">เคลียร์ยอดแล้ว</option>
+        <option value="ฎีกาถูกตีกลับจากกองคลัง">ฎีกาถูกตีกลับจากกองคลัง</option>
         <option value="ปฏิเสธ">ปฏิเสธ</option>
       </select>
     </div>
@@ -112,6 +162,9 @@
           {% elif borrowing_ticket.status|lower == 'มียอดคงค้าง' %}
             {% set badge_class = 'bg-info text-dark' %}
             {% set display_status = 'มียอดคงค้าง' %}
+          {% elif borrowing_ticket.status|lower == 'ฎีกาถูกตีกลับจากกองคลัง' %}
+            {% set badge_class = 'bg-danger text-white' %}
+            {% set display_status = 'ฎีกาถูกตีกลับจากกองคลัง' %}
           {% elif borrowing_ticket.status|lower in ['ปฏิเสธ'] %}
             {% set badge_class = 'bg-danger text-white' %}
             {% set display_status = 'ปฏิเสธ' %}
