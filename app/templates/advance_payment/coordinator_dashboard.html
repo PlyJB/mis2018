@@ -120,14 +120,14 @@
                 <div class="row g-3 mb-3">
                   <div class="col-md-6">
                     <label for="aip_ref_no" class="form-label fw-bold">เลขที่อนุมัติในหลักการ (หากมีมากกว่าหนึ่ง คั่นด้วยสัญลักษณ์ ",")</label>
-                    <input id="aip_ref_no" name="aip_ref_no" type="text" value="{{ borrowing_ticket_form.aip_ref_no.data or '' }}" class="form-control" placeholder="78.04/1, 78.04/11">
+                    <input id="aip_ref_no" name="aip_ref_no" type="text" value="{{ borrowing_ticket_form.aip_ref_no.data or '' }}" class="form-control" placeholder="78.04/1, 78.04/11" required>
                     {% for error in borrowing_ticket_form.aip_ref_no.errors %}
                       <div class="text-danger small mt-1">{{ error }}</div>
                     {% endfor %}
                   </div>
                   <div class="col-md-6">
                     <label for="aip_ref_date" class="form-label fw-bold">วันที่หนังสือได้รับการอนุมัติ</label>
-                    <input id="aip_ref_date" name="aip_ref_date" type="date" value="{{ borrowing_ticket_form.aip_ref_date.data or '' }}" class="form-control" placeholder="วันที่หนังสือได้รับการอนุมัติ">
+                    <input id="aip_ref_date" name="aip_ref_date" type="date" value="{{ borrowing_ticket_form.aip_ref_date.data or '' }}" class="form-control" placeholder="วันที่หนังสือได้รับการอนุมัติ" required>
                     {% for error in borrowing_ticket_form.aip_ref_date.errors %}
                       <div class="text-danger small mt-1">{{ error }}</div>
                     {% endfor %}
