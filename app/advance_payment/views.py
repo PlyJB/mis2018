@@ -157,8 +157,10 @@ def _normalize_status_label(status_value, default=None):
 
 def _normalize_history_status(status):
     raw_status = (status or "").strip()
-    if raw_status in {"รอตรวจสอบ", "รอการตรวจสอบ", "กำลังส่งคำขอ", "พัสดุกำลังดำเนินการ"}:
+    if raw_status in {"รอตรวจสอบ", "รอการตรวจสอบ", "กำลังส่งคำขอ"}:
         return "รอตรวจสอบ"
+    if raw_status == "พัสดุกำลังดำเนินการ":
+        return "พัสดุกำลังดำเนินการ"
     if raw_status == "กำลังตรวจสอบ":
         return "กำลังตรวจสอบ"
     if raw_status in {"ผ่านการตรวจสอบ", "ได้รับเอกสารแล้ว"}:
@@ -1652,6 +1654,7 @@ def _calculate_fund_request_totals(fund_request_id, *, exclude_claim_id=None, ex
 
     parcel_query = db.session.query(func.coalesce(func.sum(ParcelReturnDetail.amount_spent), 0)).filter(
         ParcelReturnDetail.fund_request_id == fund_request_id,
+        ParcelReturnDetail.status.in_(["พัสดุกำลังดำเนินการ", "ได้รับเอกสารแล้ว"]),
     )
     if exclude_parcel_return_id:
         parcel_query = parcel_query.filter(ParcelReturnDetail.id != exclude_parcel_return_id)
@@ -2797,22 +2800,36 @@ def _recalculate_fund_request_submission_status(fund_request_id):
         for claim in claims
     )
 
-    parcel_total = (
-        db.session.query(func.coalesce(func.sum(ParcelReturnDetail.amount_spent), 0))
+    parcel_returns = (
+        db.session.query(ParcelReturnDetail)
         .filter(
             ParcelReturnDetail.fund_request_id == fund_request_id,
-            ParcelReturnDetail.status != "ปฏิเสธ",
+            ParcelReturnDetail.status.not_in(["ปฏิเสธ", "ถูกปฏิเสธ"]),
         )
-        .scalar()
-        or 0
+        .all()
+    )
+    parcel_total = sum(
+        float(parcel.amount_spent or 0)
+        for parcel in parcel_returns
+        if (parcel.status or "").strip()
+        in {"พัสดุกำลังดำเนินการ", "ได้รับเอกสารแล้ว"}
+    )
+    parcel_not_received = any(
+        (parcel.status or "").strip() != "ได้รับเอกสารแล้ว"
+        for parcel in parcel_returns
     )
 
     combined_total = float(claim_total or 0) + float(parcel_total or 0)
     target_total = float(fund_request.amount or 0)
 
     if round(combined_total, 2) == round(target_total, 2) and target_total > 0:
+        # A parcel return must be received before the request can be cleared.
+        # While it is still being processed, the amount is already submitted,
+        # but the fund request remains at the submission-complete stage.
         fund_request.status = (
-            "ส่งเบิกครบแล้ว" if pending_claim_transfer else "เคลียร์ยอดสำเร็จ"
+            "ส่งเบิกครบแล้ว"
+            if pending_claim_transfer or parcel_not_received
+            else "เคลียร์ยอดสำเร็จ"
         )
     else:
         fund_request.status = "อนุมัติแล้ว"

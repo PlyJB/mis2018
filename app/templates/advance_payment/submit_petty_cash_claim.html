@@ -67,8 +67,6 @@
       {% set fund_request_status_class = 'bg-secondary text-white' %}
       {% if current_fund_request_step == 'อนุมัติแล้ว' %}
         {% set fund_request_status_class = 'bg-primary text-white' %}
-      {% elif current_fund_request_step == 'เบิกเงินแล้ว' %}
-        {% set fund_request_status_class = 'bg-success text-white' %}
       {% elif current_fund_request_step == 'ส่งเบิกครบแล้ว' %}
         {% set fund_request_status_class = 'bg-info text-white' %}
       {% elif current_fund_request_step == 'เคลียร์ยอดสำเร็จ' %}
