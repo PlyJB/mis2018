@@ -222,7 +222,12 @@
 
             <!-- สถานะ -->
             <td class="text-center">
-              <span class="badge {{ badge_class }} px-2 py-1">{{ display_status }}</span>
+              <div class="d-flex flex-column align-items-center gap-1">
+                <span class="badge {{ badge_class }} px-2 py-1">{{ display_status }}</span>
+                {% if borrowing_ticket.has_rejected_followup %}
+                  <span class="text-danger small fw-semibold rejected-followup-message">มีรายการรอการแก้ไข</span>
+                {% endif %}
+              </div>
             </td>
 
             <!-- วันครบกำหนด -->

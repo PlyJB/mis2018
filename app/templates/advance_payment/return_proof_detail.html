@@ -10,7 +10,7 @@
   <p class="text-uppercase fw-bold text-muted small mb-1 pt-3" style="letter-spacing: 0.1em;">ตรวจสอบหลักฐาน</p>
   <h1 class="fw-bold display-6 mb-2">รายละเอียดไฟล์หลักฐานเอกสารส่งใช้เงินยืม</h1>
 </header>
-{% with document=return_detail, pdf_export_url=url_for('advance_payment.export_ticket_return_pdf', return_id=return_detail.id) %}
+{% with document=return_detail, pdf_export_url=url_for('advance_payment.export_ticket_return_pdf', return_id=return_detail.id), pdf_reference_editable=False %}
   {% include 'advance_payment/_pdf_reference_modal.html' %}
 {% endwith %}
 
@@ -94,7 +94,7 @@
             </div>
         {% endif %}
         {% if return_detail.status|lower == 'รอตรวจสอบ' %}
-            <button type="button" class="btn btn-warning btn-sm fw-bold px-3 py-1.5" data-bs-toggle="modal" data-bs-target="#confirmCheckingModal">
+            <button type="button" class="btn btn-outline-warning btn-sm fw-bold px-3 py-1.5" data-bs-toggle="modal" data-bs-target="#confirmCheckingModal">
                 เริ่มการตรวจสอบ
             </button>
             <div class="modal fade" id="confirmCheckingModal" tabindex="-1" aria-hidden="true">

@@ -154,6 +154,17 @@ def get_thai_month_year(date_obj):
     ]
     return f"{date_obj.day} {th_months[date_obj.month - 1]} {date_obj.year + 543}"
 
+
+def _format_fiscal_year_for_pdf(value):
+    """Format stored fiscal-year values as the Buddhist year used in PDFs."""
+    if value is None or str(value).strip() == "":
+        return "................"
+    try:
+        fiscal_year = int(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return str(fiscal_year + 543 if fiscal_year < 2400 else fiscal_year)
+
 def draw_dotted_line():
     return Paragraph("....................................................................................................................................................", styles['ThaiCenter'])
 
@@ -313,12 +324,12 @@ def generate_fnar02_pdf(ticket):
     
     bank_account_info = _get_bank_account_info_for_ticket(ticket)
     account_number = (getattr(ticket, 'account_number', '') or '').strip() or (
-        bank_account_info.account_number if bank_account_info else '....................................'
+        bank_account_info.account_number if bank_account_info else 'ไม่พบข้อมูล'
     )
     account_name = (
         bank_account_info.thai_name
         if bank_account_info and bank_account_info.thai_name
-        else '....................................'
+        else 'ไม่พบข้อมูล'
     )
     borrowing_purpose = getattr(ticket, 'borrowing_ticket_purpose', None) or getattr(ticket, 'borrowing_ticket_name', None) or "........................................................"
     
@@ -463,7 +474,7 @@ def generate_fnar02_pdf(ticket):
     <b>เสนอ คณบดี</b><br/>
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ได้ตรวจสอบแล้ว เห็นสมควรอนุมัติให้ยืมตามใบยืมฉบับนี้ได้ จำนวนเงิน {amount_numeric} บาท ( {amount_text} )<br/><br/>
     ลงชื่อ ............................................................................. &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; วันที่...................................................................<br/>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;( ....................................................................... )<br/>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;( รองศาสตราจารย์ ดร.วิลาสินี จึงประสบสุข )<br/>
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;รองคณบดีฝ่ายการคลังและสินทรัพย์
     """
     p_box3 = Paragraph(box3_html, styles['ThaiNormal'])
@@ -473,7 +484,7 @@ def generate_fnar02_pdf(ticket):
     box4_content_html = f"""
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;อนุมัติให้ยืมตามเงื่อนไขข้างต้นได้ เป็นจำนวนเงิน {amount_numeric} บาท ( {amount_text} )<br/><br/>
     ลงชื่อผู้อนุมัติ .................................................................... &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; วันที่...................................................................<br/>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;( ............................................................. )<br/>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;( ผู้ช่วยศาสตราจารย์ ดร.โชติรส พลับพลึง )<br/>
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;คณบดีคณะเทคนิคการแพทย์
     """
     p_content_box4 = Paragraph(box4_content_html, styles['ThaiNormal'])
@@ -563,7 +574,7 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
         or (getattr(setting, "department_name", None) or "").strip()
         or (getattr(fund_request, "department_name", None) or "").strip()
         or (getattr(requester, "department", None) or "").strip()
-        or "........................................"
+        or "ไม่พบข้อมูล"
     )
 
     borrowing_ticket = getattr(fund_request, "borrowing_ticket", None) if fund_request else None
@@ -573,29 +584,29 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
     )
     dept_info = get_department_info_from_api(department_name)
     dept_info = _apply_borrower_head(dept_info, borrower_account_id)
-    head_name = dept_info.get("head", ".......................................................")
-    head_pos = dept_info.get("head_position", "หัวหน้าฝ่าย")
+    head_name = dept_info.get("head", "ไม่พบข้อมูล")
+    head_pos = dept_info.get("head_position", "ไม่พบข้อมูล")
 
     requester_name = (
         getattr(requester, "name", None)
         or getattr(requester, "fullname", None)
         or getattr(claim, "requester_name", None)
         or getattr(fund_request, "requester_name", None)
-        or "........................................"
+        or "ไม่พบข้อมูล"
     )
 
     requester_position = (
         getattr(requester, "position", None)
         or getattr(claim, "requester_position", None)
         or getattr(fund_request, "requester_position", None)
-        or "........................................"
+        or "ไม่พบข้อมูล"
     )
 
     request_date = (
         getattr(fund_request, "approved_at", None)
         or getattr(claim, "created_at", None)
     )
-    date_thai = get_thai_month_year(request_date.date()) if request_date else "........................................"
+    date_thai = get_thai_month_year(request_date.date()) if request_date else "ไม่พบข้อมูล"
 
     claim_number = (
         getattr(claim, "claim_number", None)
@@ -679,9 +690,7 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
         else "...................................."
     )
 
-    fiscal_year_date = request_date or claim_date
-    fiscal_year_be = convert_to_fiscal_year(fiscal_year_date.date()) + 543 if fiscal_year_date else None
-    fiscal_year_label = str(fiscal_year_be) if fiscal_year_be else "................"
+    fiscal_year_label = _format_fiscal_year_for_pdf(getattr(claim, "fiscal_year", None))
     reference_number = getattr(claim, "reference_number", None) or claim_number
     reference_date = getattr(claim, "reference_date", None)
     reference_date_label = get_thai_month_year(reference_date) if reference_date else date_thai
@@ -695,7 +704,7 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
         pagesize=A4,
         leftMargin=55,
         rightMargin=55,
-        topMargin=28,
+        topMargin=24,
         bottomMargin=30,
         title="Petty Claim Request",
     )
@@ -910,15 +919,15 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
     ]))
     story.append(head_sign_table)
-    story.append(Spacer(1, 50))
+    story.append(Spacer(1, 45))
 
     approval_sign = Paragraph(
         "อนุมัติ<br/><br/>"
-        "(......................)<br/>"
+        "(ผู้ช่วยศาสตราจารย์ ดร.โชติรส พลับพลึง)<br/>"
         "คณบดีคณะเทคนิคการแพทย์",
         claim_center,
     )
-    approval_sign_table = Table([[approval_sign, ""]], colWidths=[170, 285])
+    approval_sign_table = Table([[approval_sign, ""]], colWidths=[200, 285])
     approval_sign_table.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
@@ -970,10 +979,9 @@ def generate_ticket_return(return_detail):
         if bank_account_info and bank_account_info.thai_name
         else "...................................."
     )
-    fiscal_year = convert_to_fiscal_year(ticket_date.date()) + 543 if ticket_date else None
-    fiscal_year_label = str(fiscal_year) if fiscal_year else "................"
-    reference_number = getattr(return_detail, "reference_number", None) or aip_ref_no
-    reference_date = getattr(return_detail, "reference_date", None)
+    fiscal_year_label = _format_fiscal_year_for_pdf(getattr(return_detail, "fiscal_year", None))
+    reference_number = getattr(ticket, "aip_ref_no", None) or getattr(return_detail, "reference_number", None) or "                 "
+    reference_date = getattr(ticket, "aip_ref_date", None) or getattr(return_detail, "reference_date", None) or "                 "
     reference_date_label = get_thai_month_year(reference_date) if reference_date else date_thai
     product_name = getattr(getattr(return_detail, "product_code", None), "name", None) or "........................................"
     cost_center_label = getattr(getattr(return_detail, "cost_center", None), "id", None) or "........................................"
@@ -1019,7 +1027,7 @@ def generate_ticket_return(return_detail):
         pagesize=A4,
         leftMargin=55,
         rightMargin=55,
-        topMargin=28,
+        topMargin=24,
         bottomMargin=30,
         title="Ticket Return Request",
     )
@@ -1042,7 +1050,7 @@ def generate_ticket_return(return_detail):
         or "........................"
     )
     header_right = Paragraph(
-        f"ชื่อหน่วยงาน {department_name}<br/>"
+        f"<br/>{department_name}<br/>"
         f"คณะเทคนิคการแพทย์ มหาวิทยาลัยมหิดล<br/>"
         f"โทรศัพท์ {telephone_number}",
         return_right,
@@ -1066,7 +1074,7 @@ def generate_ticket_return(return_detail):
     info_table = Table([
         [Paragraph("ที่", return_left)],
         [Paragraph("วันที่", return_left)],
-        [Paragraph("เรื่อง", return_left), Paragraph(f"ส่งใช้เงินยืม บย. {ticket_number}", return_left)],
+        [Paragraph("เรื่อง", return_left), Paragraph(f"ขออนุมัติเบิกจ่ายพร้อมส่งใช้เงินยืม บย. {ticket_number}", return_left)],
         [Paragraph("เรียน", return_left), Paragraph("คณบดีคณะเทคนิคการแพทย์", return_left)],
     ], colWidths=[45, 410])
     info_table.setStyle(TableStyle([
@@ -1147,8 +1155,8 @@ def generate_ticket_return(return_detail):
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.append(head_sign)
-    story.append(Spacer(1, 50))
-    approval_sign = Table([[Paragraph("อนุมัติ<br/><br/>(......................)<br/>คณบดีคณะเทคนิคการแพทย์", return_center), ""]], colWidths=[170, 285])
+    story.append(Spacer(1, 45))
+    approval_sign = Table([[Paragraph("อนุมัติ<br/><br/>(ผู้ช่วยศาสตราจารย์ ดร.โชติรส พลับพลึง)<br/>คณบดีคณะเทคนิคการแพทย์", return_center), ""]], colWidths=[170, 285])
     approval_sign.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -1212,9 +1220,9 @@ def generate_fund_request_pdf(fund_request):
     dept_info = get_department_info_from_api(dept_lookup)
     dept_info = _apply_borrower_head(dept_info, borrower_account_id)
     head_name = dept_info.get("head", ".......................................................")
-    head_pos = dept_info.get("head_position", "หัวหน้าฝ่าย")
+    head_pos = dept_info.get("head_position", "ไม่พบข้อมูล")
     keeper_name = dept_info.get("keeper", ".......................................................")
-    keeper_pos = dept_info.get("position", "เจ้าหน้าที่")
+    keeper_pos = dept_info.get("position", "ไม่พบข้อมูล")
     
     amount_val = float(fund_request.amount or (borrowing_ticket.required_budget if borrowing_ticket else 0) or 0)
     amount_str = f"{amount_val:,.2f}" if amount_val > 0 else "                  "
@@ -1266,8 +1274,8 @@ def generate_fund_request_pdf(fund_request):
     story.append(Spacer(1, 2))
 
     sec1_body = Paragraph(
-        f"ข้าพเจ้า {requester if not is_type_31 else '........................'} ตำแหน่ง {requester_pos  if not is_type_31 else '........................'} มีความประสงค์ขอยืมเงินสดย่อย<br/>"
-        f"เพื่อ{purpose  if not is_type_31 else '........................'} มีรายละเอียดดังนี้",
+        f"ข้าพเจ้า {requester if not is_type_31 else 'ไม่พบข้อมูล'} ตำแหน่ง {requester_pos  if not is_type_31 else 'ไม่พบข้อมูล'} มีความประสงค์ขอยืมเงินสดย่อย<br/>"
+        f"เพื่อ{purpose  if not is_type_31 else 'ไม่พบข้อมูลว'} มีรายละเอียดดังนี้",
         styles['ThaiNormal']
     )
     story.append(sec1_body)
@@ -1467,7 +1475,7 @@ def generate_fund_request_pdf(fund_request):
             Paragraph(f"ลงชื่อผู้อนุมัติ<br/><br/>.......................................................<br/>( {head_name} )<br/>ตำแหน่ง {head_pos}", styles['ThaiCenter'])
         ]
     ]
-    t_sig2 = Table(sig_box_data_2, colWidths=[200, 200])
+    t_sig2 = Table(sig_box_data_2, colWidths=[220, 220])
     t_sig2.setStyle(TableStyle([
         ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),

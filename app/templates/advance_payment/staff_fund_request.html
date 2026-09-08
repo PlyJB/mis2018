@@ -55,7 +55,7 @@
                       <select name="requester_id" id="requester_input" class="form-select bg-white" required onchange="onBorrowerChange()">
                         <option value="">พิมพ์เพื่อค้นหา หรือเลือกพนักงาน...</option>
                         {% for emp in department_employees %}
-                          <option value="{{ emp.id }}" {% if form.requester_name.data == emp.name %}selected{% endif %}>{{ emp.name }}{% if emp.position %} ({{ emp.position }}){% endif %}</option>
+                          <option value="{{ emp.id }}" {% if form.requester_name.data == emp.name %}selected{% endif %}>{{ emp.name }}</option>
                         {% endfor %}
                       </select>
                     {% else %}
@@ -242,17 +242,42 @@
               <label for="user_total_amount" class="form-label fw-bold d-block text-end">
                 จำนวนเงินที่ต้องการขอเบิก (บาท) <span class="text-danger">*</span>
               </label>
-              <input type="text" name="amount" id="user_total_amount" class="form-control fw-bold text-primary text-end" placeholder="0.00" required style="border-radius: 12px; font-size: 1.1rem;" oninput="handleUserTotalInput(this)">
+              {% set available_budget = dept_summary.remaining_budget if dept_summary else 0 %}
+              <input type="text"
+                     name="amount"
+                     id="user_total_amount"
+                     class="form-control fw-bold text-primary text-end"
+                     placeholder="0.00"
+                     required
+                     style="border-radius: 12px; font-size: 1.1rem;"
+                     oninput="handleUserTotalInput(this)"
+                     data-available-budget="{{ '%.2f'|format(available_budget or 0) }}">
+              <div class="p-3 mt-2 border rounded-3 bg-light text-start">
+                <div class="d-flex justify-content-between align-items-center gap-3">
+                  <span class="fw-bold text-muted">ยอดคงเหลือปัจจุบัน</span>
+                  <span class="fw-bold {% if available_budget <= 0 %}text-danger{% else %}text-success{% endif %}" id="availableBudgetDisplay">
+                    {{ "{:,.2f}".format(available_budget or 0) }}
+                  </span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center gap-3 mt-1">
+                  <span class="fw-bold text-muted">ยอดคงเหลือหลังเบิก</span>
+                  <span class="fw-bold text-success" id="budgetAfterRequestDisplay">
+                    {{ "{:,.2f}".format(available_budget or 0) }}
+                  </span>
+                </div>
+                <div id="budget_limit_alert" class="text-danger small fw-bold mt-2 d-none">
+                  <i class="bi bi-exclamation-circle-fill me-1"></i> ยอดที่ขอเบิกเกินยอดคงเหลือ กรุณาปรับจำนวนเงินก่อนส่งแบบฟอร์ม
+                </div>
+              </div>
               <div id="amount_mismatch_alert" class="text-danger small fw-bold mt-1 text-end" style="display: none;">
                 <i class="bi bi-exclamation-circle-fill me-1"></i> จำนวนเงินไม่ตรงกับยอดรวมของรายการด้านบน กรุณาตรวจสอบอีกครั้ง
               </div>
-            </div>
-
-            <!-- ปุ่มบันทึก -->
-            <div class="col-md-auto text-end">
-              <button type="submit" class="btn btn-success btn-lg fw-bold mt-2 px-4" style="border-radius: 12px;">
-                <i class="bi bi-file-earmark-check me-2"></i> บันทึกและสร้างแบบฟอร์ม
-              </button>
+              <!-- ปุ่มบันทึก -->
+              <div class="col-md-auto text-end">
+                <button type="submit" class="btn btn-success btn-lg fw-bold mt-2 px-4" style="border-radius: 12px;" id="fundRequestSubmitBtn">
+                  <i class="bi bi-file-earmark-check me-2"></i> บันทึกและสร้างแบบฟอร์ม
+                </button>
+              </div>
             </div>
 
           </div>
@@ -317,6 +342,76 @@
           maximumFractionDigits: 2
         });
       }
+    }
+
+    function getAvailableBudgetAmount() {
+      const userTotalInput = document.getElementById("user_total_amount");
+      if (!userTotalInput) {
+        return 0;
+      }
+      return parseFloat(userTotalInput.dataset.availableBudget || "0") || 0;
+    }
+
+    function isAmountMismatch() {
+      const radio30 = document.getElementById("form_type_30");
+      const userTotalInput = document.getElementById("user_total_amount");
+      const sumAmountDisplay = document.getElementById("sumAmountDisplay");
+      if (!radio30 || !radio30.checked || !userTotalInput || !sumAmountDisplay) {
+        return false;
+      }
+
+      const autoAmount = parseFloat(sumAmountDisplay.innerText.replace(/,/g, "")) || 0;
+      const userAmount = parseFloat(userTotalInput.value.replace(/,/g, "")) || 0;
+      return userTotalInput.value.trim() !== "" && autoAmount.toFixed(2) !== userAmount.toFixed(2);
+    }
+
+    function updateBudgetLimitState() {
+      const userTotalInput = document.getElementById("user_total_amount");
+      const budgetAfterRequestDisplay = document.getElementById("budgetAfterRequestDisplay");
+      const availableBudgetDisplay = document.getElementById("availableBudgetDisplay");
+      const budgetLimitAlert = document.getElementById("budget_limit_alert");
+      const submitBtn = document.getElementById("fundRequestSubmitBtn");
+
+      if (!userTotalInput) {
+        return { isOverBudget: false, requestedAmount: 0, availableBudget: 0 };
+      }
+
+      const availableBudget = getAvailableBudgetAmount();
+      const requestedAmount = parseFloat(userTotalInput.value.replace(/,/g, "")) || 0;
+      const remainingAfterRequest = availableBudget - requestedAmount;
+      const isOverBudget = requestedAmount > availableBudget && requestedAmount > 0;
+      const amountMismatch = isAmountMismatch();
+      const shouldLockSubmit = availableBudget <= 0 || isOverBudget || amountMismatch;
+
+      if (availableBudgetDisplay) {
+        availableBudgetDisplay.classList.toggle("text-danger", availableBudget <= 0);
+        availableBudgetDisplay.classList.toggle("text-success", availableBudget > 0);
+      }
+
+      if (budgetAfterRequestDisplay) {
+        budgetAfterRequestDisplay.textContent = remainingAfterRequest.toLocaleString("en-US", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        });
+        budgetAfterRequestDisplay.classList.toggle("text-danger", isOverBudget);
+        budgetAfterRequestDisplay.classList.toggle("text-success", !isOverBudget);
+      }
+
+      if (budgetLimitAlert) {
+        budgetLimitAlert.classList.toggle("d-none", !isOverBudget);
+      }
+
+      if (submitBtn) {
+        submitBtn.disabled = shouldLockSubmit;
+        submitBtn.setAttribute("aria-disabled", shouldLockSubmit ? "true" : "false");
+        submitBtn.title = shouldLockSubmit
+          ? (amountMismatch
+            ? "ยอดรวมไม่ตรงกับรายการ จึงไม่สามารถส่งแบบฟอร์มได้"
+            : "ยอดขอเบิกเกินยอดคงเหลือ จึงไม่สามารถส่งแบบฟอร์มได้")
+          : "";
+      }
+
+      return { isOverBudget, amountMismatch, requestedAmount, availableBudget };
     }
 
     function handleAmountInput(element) {
@@ -524,6 +619,13 @@
       mainForm.addEventListener("submit", function(e) {
         e.preventDefault();
 
+        const budgetState = updateBudgetLimitState();
+        if (budgetState.isOverBudget || (budgetState.availableBudget <= 0 && budgetState.requestedAmount > 0)) {
+          alert("ยอดที่ขอเบิกเกินยอดคงเหลือ กรุณาปรับจำนวนเงินก่อนส่งแบบฟอร์ม");
+          userTotalInput.focus();
+          return false;
+        }
+
         if (radio30.checked && mainForm.dataset.popupConfirmed === "true") {
           delete mainForm.dataset.popupConfirmed;
         } else if (radio30.checked) {
@@ -569,6 +671,7 @@
         }
 
         userTotalInput.value = userTotalInput.value.replace(/,/g, "");
+        updateBudgetLimitState();
 
         // 3. Unlock input เพื่อให้ส่งค่าได้
         const lockedInputs = mainForm.querySelectorAll("input[disabled], select[disabled], input[readonly], select[readonly]");
@@ -697,6 +800,7 @@
       }
 
       validateAmountMatch();
+      updateBudgetLimitState();
     }
 
     function validateAmountMatch() {
@@ -713,6 +817,8 @@
       } else {
         alertBox.style.display = "none";
       }
+
+      updateBudgetLimitState();
     }
   </script>
   {% endif %}

@@ -96,8 +96,8 @@
 
             <div class="row g-3 mb-3">
               <div class="col-md-6">
-                <label for="aip_ref_no" class="form-label fw-bold">เลขที่อนุมัติในหลักการ (หากมีมากกว่าหนึ่ง ให้คั่นด้วยเครื่องหมายจุลภาค ,)</label>
-                <input id="aip_ref_no" name="aip_ref_no" type="text" value="{{ borrowing_ticket_form.aip_ref_no.data or '' }}" class="form-control" placeholder="อนุมัติในหลักการ(เลขที่หนังสือ)">
+                <label for="aip_ref_no" class="form-label fw-bold">เลขที่อนุมัติในหลักการ (หากมีมากกว่าหนึ่ง คั่นด้วยสัญลักษณ์ ",")</label>
+                <input id="aip_ref_no" name="aip_ref_no" type="text" value="{{ borrowing_ticket_form.aip_ref_no.data or '' }}" class="form-control" placeholder="78.04/1, 78.04/11">
                 {% for error in borrowing_ticket_form.aip_ref_no.errors %}
                   <div class="text-danger small mt-1">{{ error }}</div>
                 {% endfor %}
@@ -326,7 +326,7 @@
                       <i class="bi bi-save me-1"></i> บันทึกร่าง (ฉบับร่าง)
                     </button>
                     
-                    <button class="btn btn-primary fw-bold px-4 py-2" type="button" onclick="submitFormWithAction({{ borrowing_ticket.id }}, 'submit')" style="border-radius: 8px;">
+                    <button class="btn btn-primary fw-bold px-4 py-2" type="button" id="submitReturnBtn_{{ borrowing_ticket.id }}" onclick="submitFormWithAction({{ borrowing_ticket.id }}, 'submit')" style="border-radius: 8px;">
                       ส่งหลักฐานเอกสารส่งใช้เงินยืม
                     </button>
                   </div>
@@ -349,11 +349,11 @@
                   </div>
                   <div class="col-md-4">
                     <label class="form-label fw-bold">จำนวนเงินที่คืน</label>
-                    <input type="text" name="amount" id="parcel_amount_{{ borrowing_ticket.id }}" class="form-control parcel-amount-input" required placeholder="0.00">
+                    <input type="text" name="amount" id="parcel_amount_{{ borrowing_ticket.id }}" class="form-control parcel-amount-input" required>
                   </div>
                 </div>
                 <div class="text-end mt-3">
-                  <button type="submit" class="btn btn-primary fw-bold">บันทึกข้อมูลส่งฝ่ายพัสดุ</button>
+                  <button type="submit" class="btn btn-primary fw-bold" id="parcelReturnSubmitBtn_{{ borrowing_ticket.id }}">บันทึกข้อมูลส่งฝ่ายพัสดุ</button>
                 </div>
               </form>
             </div>
@@ -443,7 +443,14 @@
                     <td><strong>{{ borrowing_ticket.number if borrowing_ticket.number else "-" }}</strong></td>
                     <td>{{ borrowing_ticket.borrowing_ticket_purpose }}</td>
                     <td>{{ "{:,.2f}".format(borrowing_ticket.required_budget|float) if borrowing_ticket.required_budget else '0.00' }}</td>
-                    <td><span class="badge {{ badge_class }} status-badge">{{ display_status }}</span></td>
+                    <td>
+                      <div class="d-inline-flex flex-column align-items-center gap-1">
+                        <span class="badge {{ badge_class }} status-badge">{{ display_status }}</span>
+                        {% if borrowing_ticket.has_rejected_followup %}
+                          <span class="text-danger small fw-semibold rejected-followup-message">มีรายการรอการแก้ไข</span>
+                        {% endif %}
+                      </div>
+                    </td>
                     <td>
                       {% if ticket_status not in ['กำลังส่งคำขอ', 'ปฏิเสธ'] and borrowing_ticket.due_date %}
                         <div>{{ borrowing_ticket.due_date|thai_date }}</div>
@@ -472,9 +479,6 @@
                       <div class="d-flex gap-1 align-items-center">
                         <a href="{{ url_for('advance_payment.verification_view', ticket_id=borrowing_ticket.id) }}" class="btn btn-sm btn-outline-primary" style="border-radius:6px;">
                           ตรวจสอบสัญญา
-                        </a>
-                        <a href="{{ url_for('advance_payment.export_ticket_pdf', ticket_id=borrowing_ticket.id) }}" class="btn btn-sm btn-outline-danger" style="border-radius:6px;" target="_blank">
-                          <i class="bi bi-file-earmark-pdf-fill me-1"></i> Export PDF
                         </a>
                       </div>
                     </td>
@@ -881,17 +885,18 @@
           total += parseFloat(cleanVal) || 0;
       }
       const totalDisplay = document.getElementById(`sumAmountDisplay_${ticketId}`);
+      if (!totalDisplay) {
+        return;
+      }
       const parcelInput = document.getElementById(`parcel_amount_${ticketId}`);
       total += parseFloat((parcelInput?.value || "0").replace(/,/g, "")) || 0;
       const existingTotal = parseFloat(totalDisplay?.dataset.existingTotal || "0") || 0;
-      if (totalDisplay) {
-        const budget = parseFloat(totalDisplay.dataset.budget || "0") || 0;
-        const isOverBudget = total + existingTotal > budget;
-        totalDisplay.classList.toggle("text-danger", isOverBudget);
-        totalDisplay.classList.toggle("bg-danger-subtle", isOverBudget);
-        totalDisplay.classList.toggle("bg-info-subtle", !isOverBudget);
-        document.getElementById(`sumAmountUnit_${ticketId}`)?.classList.toggle("text-danger", isOverBudget);
-      }
+      const budget = parseFloat(totalDisplay.dataset.budget || "0") || 0;
+      const isOverBudget = total + existingTotal > budget;
+      totalDisplay.classList.toggle("text-danger", isOverBudget);
+      totalDisplay.classList.toggle("bg-danger-subtle", isOverBudget);
+      totalDisplay.classList.toggle("bg-info-subtle", !isOverBudget);
+      document.getElementById(`sumAmountUnit_${ticketId}`)?.classList.toggle("text-danger", isOverBudget);
       totalDisplay.innerText = total.toLocaleString("en-US", {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2
@@ -905,6 +910,23 @@
         });
         remainingDisplay.classList.toggle("text-danger", total + existingTotal > budget);
       }
+
+      updateReturnButtonsState(ticketId, total + existingTotal > budget);
+    }
+
+    function updateReturnButtonsState(ticketId, isOverBudget) {
+      const submitBtn = document.getElementById(`submitReturnBtn_${ticketId}`);
+      const parcelBtn = document.getElementById(`parcelReturnSubmitBtn_${ticketId}`);
+
+      [submitBtn, parcelBtn].forEach(btn => {
+        if (!btn) {
+          return;
+        }
+
+        btn.disabled = isOverBudget;
+        btn.setAttribute("aria-disabled", isOverBudget ? "true" : "false");
+        btn.title = isOverBudget ? "ยอดรวมเกินยอดที่ขอเบิก จึงไม่สามารถส่งรายการนี้ได้" : "";
+      });
     }
 
     function addDocumentRow(ticketId, buttonElem) {
@@ -1226,6 +1248,11 @@
           bindAutoSaveEvents({{ borrowing_ticket.id }});
         {% endif %}
       {% endfor %}
+
+      document.querySelectorAll("form[id^='returnForm_']").forEach(form => {
+        const ticketId = form.id.replace("returnForm_", "");
+        calculateTotalSpent(ticketId);
+      });
     });
   </script>
 

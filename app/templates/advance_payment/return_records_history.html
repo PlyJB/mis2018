@@ -141,7 +141,7 @@
           <tbody id="historyTableBody">
             {% for record in records %}
             <tr class="record-row align-top"
-                data-ticket="{{ record.borrowing_ticket_name or '' }}"
+                data-ticket="{{ record.ticket_number or '' }}"
                 data-borrower="{{ record.borrower_name or '' }}"
                 data-org-id="{{ record.org_id or '' }}"
                 data-org="{{ record.org_name or '' }}"

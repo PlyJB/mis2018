@@ -6,6 +6,11 @@ from app.main import db
 from app.staff.models import StaffAccount
 
 
+def _current_fiscal_year():
+    today = datetime.now().date()
+    return today.year + 1 if today.month >= 10 else today.year
+
+
 def _staff_name(staff):
     if staff is None:
         return None
@@ -258,6 +263,7 @@ class ReturnDetail(db.Model):
     product_code_id = Column(String(12), ForeignKey("product_codes.id"), nullable=True)
     cost_center_id = Column(String(12), ForeignKey("cost_centers.id"), nullable=True)
     iocode_id = Column(String(16), ForeignKey("iocodes.id"), nullable=True)
+    fiscal_year = Column(Integer, nullable=False, default=_current_fiscal_year)
     product_code = relationship("ProductCode")
     cost_center = relationship("CostCenter")
     iocode = relationship("IOCode")
@@ -313,7 +319,7 @@ class ReturnReceiptItem(db.Model):
     description = Column(String(255), nullable=False, default="")
     amount = Column(Numeric(12, 2), nullable=False, default=0)
     created_at = Column(DateTime, nullable=False, default=datetime.now, server_default=func.now())
-
+    # TODO add is_cash
     @property
     def proof_files(self):
         return _query_related_list(self, ReturnProofFile, "return_receipt_item_id")
@@ -407,6 +413,7 @@ class ClosingDocument(db.Model):
     document_number = Column(String(255), nullable=False, unique=True)
     filing_date = Column(Date, nullable=False)
     total_amount = Column(Numeric(12, 2), nullable=False, default=0)
+    # TODO use is_active
     status = Column(String(32), nullable=False, default="ใช้งานอยู่")
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
@@ -642,6 +649,7 @@ class PettyCashClaimDetail(db.Model):
     product_code_id = Column(String(12), ForeignKey("product_codes.id"), nullable=True)
     cost_center_id = Column(String(12), ForeignKey("cost_centers.id"), nullable=True)
     iocode_id = Column(String(16), ForeignKey("iocodes.id"), nullable=True)
+    fiscal_year = Column(Integer, nullable=False, default=_current_fiscal_year)
     product_code = relationship("ProductCode")
     cost_center = relationship("CostCenter")
     iocode = relationship("IOCode")
