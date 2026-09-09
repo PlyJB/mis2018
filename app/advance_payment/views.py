@@ -11,6 +11,8 @@ from .pdf_utils import (
     generate_fund_request_pdf,
     generate_petty_claim,
     generate_ticket_return,
+    generate_petty_cash_monthly_report_pdf,
+    summarize_petty_cash_month,
 )
 
 from flask import (
@@ -665,11 +667,11 @@ def _get_bank_account_info(*, bank_account_info_id=None, account_number=None):
     return None
 
 
-def _resolve_petty_cash_setting(user):
+def _resolve_petty_cash_setting(user, fiscal_year=None):
     if not user:
         return None
 
-    current_fiscal_year = _current_petty_cash_fiscal_year()
+    current_fiscal_year = fiscal_year if fiscal_year is not None else _current_petty_cash_fiscal_year()
     setting = getattr(user, "petty_cash_setting", None)
     if setting and getattr(setting, "valid", False) and getattr(setting, "fiscal_year", None) == current_fiscal_year:
         return setting
@@ -6059,7 +6061,6 @@ def reject_petty_claim(claim_id):
 def petty_cash_ledger():
     user_id = session.get("user_id")
     current_user = db.session.query(StaffAccount).get(user_id)
-    current_setting = _resolve_petty_cash_setting(current_user)
     selected_month = (request.args.get("month") or "").strip()
     today = datetime.now().date()
     default_month = today.replace(day=1)
@@ -6069,6 +6070,10 @@ def petty_cash_ledger():
     except ValueError:
         selected_month_start = default_month
         selected_month = default_month.strftime("%Y-%m")
+
+    selected_month = selected_month_start.strftime("%Y-%m")
+    fiscal_year = selected_month_start.year + (selected_month_start.month >= 10)
+    current_setting = _resolve_petty_cash_setting(current_user, fiscal_year=fiscal_year)
 
     if selected_month_start.year == 9999 and selected_month_start.month == 12:
         next_month_start = selected_month_start
@@ -6405,6 +6410,26 @@ def petty_cash_ledger():
         item_copy["running_balance"] = running_balance
         item_copy["is_opening_row"] = False
         ledger_items.append(item_copy)
+
+    if request.args.get("download") == "monthly-report":
+        if not current_setting or not getattr(current_setting, "id", None):
+            flash("ไม่พบการตั้งค่าเงินสดย่อยสำหรับหน่วยงาน", "warning")
+            return redirect(url_for("advance_payment.petty_cash_ledger", month=selected_month))
+        summary = summarize_petty_cash_month(selected_month_start, approved_fund_requests, all_claims)
+        department_data = get_department_data_service(department_name) or {}
+        pdf_bytes = generate_petty_cash_monthly_report_pdf(
+            setting=current_setting,
+            month_start=selected_month_start,
+            remaining_budget=running_balance,
+            summary=summary,
+            telephone_number=department_data.get("telephone_number", ""),
+        )
+        response = current_app.response_class(pdf_bytes, mimetype="application/pdf")
+        response.headers["Content-Disposition"] = (
+            f'attachment; filename="Petty_Cash_Monthly_Report_{selected_month_start:%Y-%m}.pdf"'
+        )
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
 
     return render_template(
         "petty_cash_ledger.html",

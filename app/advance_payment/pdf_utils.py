@@ -1,5 +1,8 @@
 import os
 import re
+from calendar import monthrange
+from decimal import Decimal
+from xml.sax.saxutils import escape
 from io import BytesIO
 from datetime import datetime
 from bahttext import bahttext
@@ -278,6 +281,108 @@ def _get_bank_account_info_for_petty_cash_setting(setting):
 # =========================================================================
 # 3. PDF GENERATION FUNCTIONS
 # =========================================================================
+def summarize_petty_cash_month(month_start, fund_requests, claims):
+    """Summarize the selected month's documents using their current statuses.
+
+    Count FundRequests once, even when several claims belong to one request.
+    Category 6 is money returned to the account, not a reimbursement expense.
+    """
+    month_end = month_start.replace(day=monthrange(month_start.year, month_start.month)[1])
+    requests = [fr for fr in fund_requests
+                if fr.request_date and month_start <= fr.request_date <= month_end]
+    submitted_ids = {fr.id for fr in requests if fr.status == "ส่งเบิกครบแล้ว"}
+    pending = [fr for fr in requests if fr.status == "อนุมัติแล้ว"]
+    submitted_amount = sum(
+        (Decimal(str(item.amount or 0))
+         for claim in claims
+         if claim.fund_request_id in submitted_ids
+         and claim.status not in {"ฉบับร่าง", "ปฏิเสธ", "ยกเลิก"}
+         for item in claim.items
+         if str(item.category_type) != "6"
+         and item.receipt_date and item.receipt_date <= month_end),
+        Decimal("0.00"),
+    )
+    return {
+        "submitted_count": len(submitted_ids),
+        "submitted_amount": submitted_amount,
+        "pending_count": len(pending),
+        "pending_amount": sum((Decimal(str(fr.amount or 0)) for fr in pending), Decimal("0.00")),
+    }
+
+
+def generate_petty_cash_monthly_report_pdf(*, setting, month_start, remaining_budget,
+                                          summary, telephone_number=""):
+    """Create the MT-Petty Cash-004 monthly status letter as PDF bytes."""
+    from reportlab.platypus import Image
+
+    department_name = setting.department_name or missing_department_notice()
+    department = escape(str(department_name))
+    dept_info = get_department_info_from_api(department_name)
+    head_name = escape(str(dept_info.get("head") or "......................................................."))
+    head_pos = escape(str(dept_info.get("head_position") or "........................................"))
+    telephone = escape(str(telephone_number or "................................"))
+    last_day = month_start.replace(day=monthrange(month_start.year, month_start.month)[1])
+    month_label = get_thai_month_year(month_start).split(" ", 1)[1]
+    last_day_label = get_thai_month_year(last_day)
+    budget = Decimal(str(setting.budget or 0))
+    balance = Decimal(str(remaining_budget)).quantize(Decimal("0.01"))
+    submitted = Decimal(str(summary["submitted_amount"]))
+    pending = Decimal(str(summary["pending_amount"]))
+    total = balance + submitted + pending
+    normal = ParagraphStyle("MonthlyNormal", parent=styles["ThaiNormal"], fontSize=14, leading=18, wordWrap="CJK")
+    right = ParagraphStyle("MonthlyRight", parent=normal, alignment=TA_RIGHT)
+    center = ParagraphStyle("MonthlyCenter", parent=normal, alignment=TA_CENTER)
+    official = ParagraphStyle("MonthlyOfficial", parent=normal, firstLineIndent=48)
+    p = lambda text, style=normal: Paragraph(text, style)
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=68, rightMargin=50,
+                            topMargin=36, bottomMargin=40,
+                            title=f"รายงานสถานะเงินสดย่อย ประจำเดือน{month_label}")
+    story = [p("MT-Petty Cash-004", right)]
+    logo_path = os.path.join(BASE_DIR, "static", "logo-MU_black-white-2-1.png")
+    if os.path.exists(logo_path):
+        logo = Image(logo_path, width=70, height=70)
+        logo.hAlign = "CENTER"
+        story.append(logo)
+    story.extend([
+        p(f"{department}<br/>คณะเทคนิคการแพทย์ มหาวิทยาลัยมหิดล<br/>โทร. {telephone}", right),
+        Spacer(1, 24), p("ที่"), p("วันที่"),
+        p(f"เรื่อง รายงานสถานะเงินสดย่อยของ{department} ประจำเดือน{month_label}"),
+        Spacer(1, 8), p("เรียน คณบดีคณะเทคนิคการแพทย์"), Spacer(1, 8),
+    ])
+    attachments = Table([[p("สิ่งที่ส่งมาด้วย"), p(
+        f"1. ทะเบียนคุมเงินสดย่อย ณ วันที่ {last_day_label}<br/>"
+        "2. สำเนาใบยืมเงินสดย่อย/ใบเบิกเงินสดย่อย<br/>"
+        "3. สำเนาสมุดเงินฝากออมทรัพย์ 1 เล่ม")]], colWidths=[78, doc.width - 78])
+    attachments.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"),
+                                    ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
+    story.extend([attachments, Spacer(1, 16), p(
+        f"ตามที่ {department} ได้รับจัดสรรเงินสดย่อยจากเงินทดรองจ่ายของคณะฯ "
+        f"ประจำปีงบประมาณ {_format_fiscal_year_for_pdf(setting.fiscal_year)} "
+        f"เป็นจำนวนเงิน {budget:,.2f} บาท ({escape(bahttext(budget))}) "
+        f"{department} ขอรายงานสถานะเงินสดย่อย ณ วันที่ {last_day_label} ดังนี้", official),
+        Spacer(1, 4)])
+    rows = [
+        [p("ลำดับที่", center), p("รายการ", center), p("จำนวนเงิน", center)],
+        [p("1", center), p("เงินสด"), p("-", right)],
+        [p("2", center), p("เงินฝากอยู่ในบัญชีเงินฝากออมทรัพย์ 1 เล่ม"), p(f"{balance:,.2f}", right)],
+        [p("3", center), p(f'เอกสารเบิกจ่ายที่ส่งเบิกมาแล้ว รวม {summary["submitted_count"]} ฉบับ'), p(f"{submitted:,.2f}", right)],
+        [p("4", center), p(f'เอกสารเบิกจ่ายที่ยังไม่ส่งเบิก รวม {summary["pending_count"]} ฉบับ'), p(f"{pending:,.2f}", right)],
+        ["", p(f"ตัวอักษร ({escape(bahttext(total))}) <b>รวมทั้งสิ้น</b>", right), p(f"<b>{total:,.2f}</b>", right)],
+    ]
+    table = Table(rows, colWidths=[44, doc.width - 156, 112])
+    table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+                               ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                               ("TOPPADDING", (0, 0), (-1, -1), 3),
+                               ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+    story.extend([table, p("จึงเรียนมาเพื่อโปรดทราบ", official), Spacer(1, 40)])
+    signature = Table([["", p(f"({head_name})<br/>{head_pos}", center)]],
+                      colWidths=[doc.width * 0.45, doc.width * 0.55])
+    story.append(signature)
+    doc.build(story)
+    return buffer.getvalue()
+
+
 from reportlab.platypus import PageBreak  # เพิ่ม Import PageBreak สำหรับขึ้นหน้าใหม่
 
 def generate_fnar02_pdf(ticket):
