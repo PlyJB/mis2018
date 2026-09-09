@@ -4231,44 +4231,21 @@ def petty_cash_settings():
             continue
 
         key = (fiscal_year, getattr(fund_request, "org_id", None))
-        summary = request_summary.setdefault(key, {"request_count": 0, "used_amount": Decimal("0.00")})
+        summary = request_summary.setdefault(
+            key,
+            {
+                "fiscal_year": fiscal_year,
+                "department_name": fund_request.department_name or "ไม่พบข้อมูลหน่วยงาน",
+                "request_count": 0,
+                "used_amount": Decimal("0.00"),
+            },
+        )
         summary["request_count"] += 1
         summary["used_amount"] += Decimal(fund_request.amount or 0)
 
-    # Use budget settings as the source of departments so departments with no
-    # requests still appear with zero activity for that fiscal year.
-    history_summary = []
-    for setting in all_settings:
-        if setting.fiscal_year >= current_fiscal_year:
-            continue
-
-        key = (setting.fiscal_year, setting.org_id)
-        request_data = request_summary.get(key, {"request_count": 0, "used_amount": Decimal("0.00")})
-        history_summary.append(
-            {
-                "fiscal_year": setting.fiscal_year,
-                "department_name": setting.department_name or "ไม่พบข้อมูลหน่วยงาน",
-                "request_count": request_data["request_count"],
-                "used_amount": request_data["used_amount"],
-            }
-        )
-
-    # Keep the previous fiscal year visible for configured departments even
-    # when the old setting row was rolled forward and no longer exists.
-    if not history_summary:
-        previous_fiscal_year = current_fiscal_year - 1
-        for setting in display_settings:
-            history_summary.append(
-                {
-                    "fiscal_year": previous_fiscal_year,
-                    "department_name": setting.department_name or "ไม่ระบุหน่วยงาน",
-                    "request_count": 0,
-                    "used_amount": Decimal("0.00"),
-                }
-            )
-
+    # Only show departments and fiscal years with actual request history.
     history_summary = sorted(
-        history_summary,
+        request_summary.values(),
         key=lambda item: (-item["fiscal_year"], item["department_name"]),
     )
 
