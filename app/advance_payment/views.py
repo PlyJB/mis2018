@@ -12,6 +12,7 @@ from .pdf_utils import (
     generate_petty_claim,
     generate_ticket_return,
     generate_petty_cash_monthly_report_pdf,
+    append_petty_cash_monthly_attachments,
     summarize_petty_cash_month,
 )
 
@@ -6423,6 +6424,23 @@ def petty_cash_ledger():
             remaining_budget=running_balance,
             summary=summary,
             telephone_number=department_data.get("telephone_number", ""),
+        )
+        # Use the same department/account scope as the ledger, including all
+        # request statuses as requested for the monthly attachment bundle.
+        monthly_requests = (
+            db.session.query(FundRequest)
+            .filter(
+                or_(*fund_request_scope),
+                FundRequest.request_date >= selected_month_start,
+                FundRequest.request_date < next_month_start,
+            )
+            .order_by(FundRequest.request_date.asc(), FundRequest.id.asc())
+            .all()
+            if department_name or account_number else []
+        )
+        pdf_bytes = append_petty_cash_monthly_attachments(
+            pdf_bytes, setting=current_setting, month_start=selected_month_start,
+            ledger_items=ledger_items, fund_requests=monthly_requests,
         )
         response = current_app.response_class(pdf_bytes, mimetype="application/pdf")
         response.headers["Content-Disposition"] = (

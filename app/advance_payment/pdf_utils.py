@@ -1604,3 +1604,169 @@ def generate_fund_request_pdf(fund_request):
     pdf_bytes = buffer.getvalue()
     buffer.close()
     return pdf_bytes
+
+
+def generate_petty_cash_ledger_pdf(*, setting, month_start, ledger_items):
+    """Render the existing 17-column monthly ledger as landscape A4 pages."""
+    from reportlab.lib.pagesizes import landscape
+    from reportlab.platypus import LongTable
+    from decimal import Decimal
+
+    ledger_items = list(ledger_items)
+
+    output = BytesIO()
+    doc = SimpleDocTemplate(output, pagesize=landscape(A4), leftMargin=20,
+                            rightMargin=20, topMargin=60, bottomMargin=28)
+    body = ParagraphStyle("LedgerBody", fontName="Sarabun", fontSize=9,
+                          leading=11, wordWrap="CJK")
+    center = ParagraphStyle("LedgerCenter", parent=body, alignment=TA_CENTER)
+    right = ParagraphStyle("LedgerRight", parent=body, alignment=TA_RIGHT)
+    header = ParagraphStyle("LedgerHeader", parent=center, fontName="SarabunBold")
+
+    def cell(value, style=body):
+        return Paragraph(escape(str(value if value is not None else "")), style)
+
+    def heading(value):
+        return Paragraph(value, header)
+
+    def amount(row, key):
+        value = row.get(key) or 0
+        return cell(f"{value:,.2f}" if value > 0 else "", right)
+
+    rows = [
+        [heading(text) for text in [
+            "(1)<br/>เดือน / ปี", "(2)<br/>วันที่", "(3)<br/>รายการ",
+            "(4)<br/>เลขที่หนังสืออนุมัติเบิกค่าใช้จ่าย", "(5)<br/>เงินฝากธนาคาร", "",
+            "(6)<br/>เงินสด", "", "(7-11)<br/>รายละเอียดรายจ่ายต่าง ๆ", "", "", "", "", "",
+            "(12)<br/>โอนคืนบัญชีหน่วย", "(13)<br/>ยอดเงินคงเหลือ", "วันที่ส่งเอกสารเบิก"]],
+        [heading(text) for text in ["", "", "", "", "รับ", "จ่าย", "รับ", "จ่าย",
+            "(7)<br/>ค่าตอบแทน", "(8)<br/>ค่าใช้สอย", "(9)<br/>ค่าวัสดุ",
+            "(10)<br/>ค่าสาธารณูปโภค", "(11)<br/>อื่น ๆ", "", "", "", ""]],
+        [heading(text) for text in ["", "", "", "", "", "", "", "", "", "", "", "",
+                                   "รายการ", "จำนวนเงิน", "", "", ""]],
+    ]
+    commands = [
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.black),
+        ("BACKGROUND", (0, 0), (-1, 2), colors.HexColor("#f0f1f2")),
+        ("VALIGN", (0, 0), (-1, 2), "MIDDLE"),
+        ("VALIGN", (0, 3), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("SPAN", (4, 0), (5, 0)), ("SPAN", (6, 0), (7, 0)),
+        ("SPAN", (8, 0), (13, 0)), ("SPAN", (12, 1), (13, 1)),
+    ]
+    commands += [("SPAN", (col, 0), (col, 2)) for col in [0, 1, 2, 3, 14, 15, 16]]
+    commands += [("SPAN", (col, 1), (col, 2)) for col in range(4, 12)]
+    for row in ledger_items:
+        receipt_date = row.get("receipt_date")
+        created_at = row.get("created_at")
+        balance = row.get("running_balance")
+        rows.append([
+            cell(receipt_date.strftime("%m/%Y") if receipt_date else "-", center),
+            cell(1 if row.get("is_opening_row") else receipt_date.day if receipt_date else "-", center),
+            cell(row.get("description")), cell(row.get("doc_number") or ""),
+            amount(row, "bank_income"), amount(row, "bank_expense"), "", "",
+            *[amount(row, key) for key in ["cat_7", "cat_8", "cat_9", "cat_10"]],
+            cell(row.get("custom_category") or ""), amount(row, "cat_11"), amount(row, "cat_12"),
+            cell(f"{balance:,.2f}" if balance is not None else "-", right),
+            cell(created_at.strftime("%d/%m/%Y") if created_at else "-", center),
+        ])
+    if len(rows) == 3:
+        rows.append([cell(f"ไม่พบรายการบัญชีประจำเดือน {month_start:%m/%Y}", center)] + [""] * 16)
+        commands.append(("SPAN", (0, 3), (-1, 3)))
+    widths = [33, 23, 100, 63, 49, 49, 28, 28, 44, 44, 44, 46, 56, 44, 47, 53, 50]
+    widths = [width * doc.width / sum(widths) for width in widths]
+    # Include the opening balance, exactly as displayed in the bank receipt column.
+    total_income = sum((Decimal(str(row.get("bank_income") or 0)) for row in ledger_items), Decimal("0"))
+    total_expense = sum((Decimal(str(row.get("bank_expense") or 0)) for row in ledger_items), Decimal("0"))
+    totals = [""] * 17
+    totals[3] = cell("รวมทั้งสิ้น", right)
+    totals[4] = cell(f"{total_income:,.2f}", right)
+    totals[5] = cell(f"{total_expense:,.2f}", right)
+    totals[15] = cell(f"{total_income - total_expense:,.2f}", right)
+    totals_table = Table([totals], colWidths=widths)
+    totals_table.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    department = escape(str(setting.department_name or ""))
+    info = get_department_info_from_api(setting.department_name)
+    keeper_name = escape(str(info.get("keeper") or "......................................................."))
+    keeper_pos = escape(str(info.get("position") or "........................................"))
+    head_name = escape(str(info.get("head") or "......................................................."))
+    head_pos = escape(str(info.get("head_position") or "........................................"))
+    signature_style = ParagraphStyle("LedgerSignature", parent=center, fontSize=11, leading=14)
+    dotted_line = ".......................................................<br/>"
+    signatures = Table([[
+        Paragraph(dotted_line + f"({keeper_name})<br/>ตำแหน่ง {keeper_pos} - ผู้เก็บรักษาเงินสดย่อย{department}", signature_style),
+        Paragraph(dotted_line + f"({head_name})<br/>ตำแหน่ง {head_pos}", signature_style),
+        Paragraph(dotted_line + "(&nbsp;" + "&nbsp;" * 55 + ")<br/>ตำแหน่ง นักวิชาการเงินและบัญชี", signature_style),
+    ]], colWidths=[doc.width * 0.38, doc.width * 0.30, doc.width * 0.32])
+    signatures.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 28),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+    ]))
+    # Keep totals and all signatures on the final ledger page, outside the grid.
+    commands[0] = ("GRID", (0, 0), (-1, len(rows) - 1), 0.4, colors.black)
+    footer_index = len(rows)
+    rows.append([[totals_table, signatures]] + [""] * 16)
+    commands.extend([
+        ("SPAN", (0, footer_index), (-1, footer_index)),
+        ("NOSPLIT", (0, footer_index), (-1, footer_index)),
+        ("LEFTPADDING", (0, footer_index), (-1, footer_index), 0),
+        ("RIGHTPADDING", (0, footer_index), (-1, footer_index), 0),
+        ("TOPPADDING", (0, footer_index), (-1, footer_index), 0),
+        ("BOTTOMPADDING", (0, footer_index), (-1, footer_index), 0),
+    ])
+    table = LongTable(rows, colWidths=widths, repeatRows=3, splitByRow=1, splitInRow=1)
+    table.setStyle(TableStyle(commands))
+
+    def page_header(canvas, document):
+        canvas.saveState()
+        width, height = landscape(A4)
+        title_style = ParagraphStyle("LedgerTitle", parent=center, fontSize=12, leading=14)
+        title = Paragraph(
+            "<b>ทะเบียนคุมเงินสดย่อย</b><br/>"
+            f"{escape(str(setting.department_name or ''))} ประจำเดือน "
+            f"{get_thai_month_year(month_start).split(' ', 1)[1]}", title_style)
+        _, title_height = title.wrap(document.width, 40)
+        title.drawOn(canvas, document.leftMargin, height - 18 - title_height)
+        canvas.setFont("Sarabun", 9)
+        canvas.drawRightString(width - 20, height - 12, "MT-Petty Cash-003")
+        canvas.drawRightString(width - 20, 14, f"หน้า {document.page}")
+        canvas.restoreState()
+
+    doc.build([table], onFirstPage=page_header, onLaterPages=page_header)
+    return output.getvalue()
+
+
+def append_petty_cash_monthly_attachments(report_pdf, *, setting, month_start,
+                                         ledger_items, fund_requests):
+    """Keep the report intact, then append the ledger and each month's request."""
+    from pypdf import PdfReader, PdfWriter
+
+    writer = PdfWriter()
+    def append(data):
+        reader = PdfReader(BytesIO(data))
+        for page in reader.pages:
+            writer.add_page(page)
+
+    append(report_pdf)
+    append(generate_petty_cash_ledger_pdf(setting=setting, month_start=month_start,
+                                          ledger_items=ledger_items))
+    # Defend the public helper against accidentally attaching other months.
+    monthly_requests = [fr for fr in fund_requests if fr.request_date
+                        and (fr.request_date.year, fr.request_date.month)
+                        == (month_start.year, month_start.month)]
+    for fund_request in sorted(monthly_requests, key=lambda fr: (fr.request_date, fr.id)):
+        append(generate_fund_request_pdf(fund_request))
+    writer.add_metadata({"/Title": f"Petty Cash Monthly Report {month_start:%Y-%m}"})
+    output = BytesIO()
+    writer.write(output)
+    writer.close()
+    return output.getvalue()
