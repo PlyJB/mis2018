@@ -180,6 +180,8 @@
               <tbody>
                 {% for setting in settings %}
                 {% set summary = dept_summary.get(setting.id, {}) %}
+                {% set selected_account_number = setting.bank_account_info.account_number if setting.bank_account_info else setting.account_number %}
+                {% set selected_account_closed = setting.bank_account_info and setting.bank_account_info.closed_at %}
                 <tr>
                   <td class="text-center fw-bold">{{ setting.fiscal_year + 543 }}</td>
                   <td class="fw-bold text-dark">{{ setting.department_name }}</td>
@@ -188,6 +190,9 @@
                     {% if setting.bank_account_info %}
                       <div>{{ setting.bank_account_info.account_number }}</div>
                       <div class="small text-muted">{{ setting.bank_account_info.thai_name }}</div>
+                      {% if setting.bank_account_info.closed_at %}
+                        <div class="small text-danger">ปิดบัญชีแล้ว {{ setting.bank_account_info.closed_at|thai_date }}</div>
+                      {% endif %}
                     {% else %}
                       {{ setting.account_number or '-' }}
                     {% endif %}
@@ -288,8 +293,9 @@
                           {% if selected_account_number and selected_account_number not in bank_account_values %}
                             <option value="{{ selected_account_number }}"
                                     data-bank-account-id="{{ setting.bank_account_info_id or '' }}"
+                                    {% if selected_account_closed %}disabled{% endif %}
                                     selected>
-                              {{ selected_account_number }}
+                              {{ selected_account_number }}{% if selected_account_closed %} - ปิดบัญชีแล้ว{% endif %}
                             </option>
                           {% endif %}
                         </select>

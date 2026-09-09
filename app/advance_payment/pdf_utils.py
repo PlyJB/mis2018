@@ -623,11 +623,7 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
         or getattr(fund_request, "claim_name", None)
         or ("วัตถุประสงค์ของการขอเบิกค่าใช้จ่าย" if is_ticket_return else "วัตถุประสงค์ของการขอเบิกเงินสดย่อย")
     )
-    subject_text = (
-        f"ส่งใช้เงินยืม บย. {claim_number}"
-        if is_ticket_return
-        else f"ขออนุมัติเบิกค่าใช้จ่าย{request_purpose}"
-    )
+    subject_text = (f"ขออนุมัติเบิกค่าใช้จ่าย{request_purpose}")
 
     claim_items = list(getattr(claim, "items", None) or [])
     display_items = [
@@ -704,8 +700,8 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
         pagesize=A4,
         leftMargin=55,
         rightMargin=55,
-        topMargin=24,
-        bottomMargin=30,
+        topMargin=22,
+        bottomMargin=22,
         title="Petty Claim Request",
     )
 
@@ -785,8 +781,8 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
     story.append(Spacer(1, 10))
 
     info_data = [
-        [Paragraph("ที่", claim_left), Paragraph(getattr(fund_request, "aip_ref_no", None) or claim_number, claim_left)],
-        [Paragraph("วันที่", claim_left), Paragraph(date_thai, claim_left)],
+        [Paragraph("ที่", claim_left)],
+        [Paragraph("วันที่", claim_left)],
         [Paragraph("เรื่อง", claim_left), Paragraph(subject_text, claim_left)],
         [Paragraph("เรียน", claim_left), Paragraph("คณบดีคณะเทคนิคการแพทย์", claim_left)],
     ]
@@ -927,7 +923,7 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
         "คณบดีคณะเทคนิคการแพทย์",
         claim_center,
     )
-    approval_sign_table = Table([[approval_sign, ""]], colWidths=[200, 285])
+    approval_sign_table = Table([[approval_sign, ""]], colWidths=[285, 285])
     approval_sign_table.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
@@ -1027,8 +1023,8 @@ def generate_ticket_return(return_detail):
         pagesize=A4,
         leftMargin=55,
         rightMargin=55,
-        topMargin=24,
-        bottomMargin=30,
+        topMargin=22,
+        bottomMargin=22,
         title="Ticket Return Request",
     )
     story = []
@@ -1138,7 +1134,7 @@ def generate_ticket_return(return_detail):
         f"รหัสศูนย์ต้นทุน {cost_center_label} รหัสใบสั่งงานภายใน {mission_label} "
         f"เอกสารฉบับนี้ส่งคืนบัญชีเงินยืม "
         f"บย.{ticket_number} "
-        f"เพื่อทำการขอเบิกเงินคืนเข้าบัญชีเงินสดย่อยของหน่วยงานต่อไป "
+        f"เพื่อทำการขอเบิกเงินคืนต่อไป "
         f"ดังรายละเอียดตามเอกสารที่แนบมาพร้อมนี้",
         return_left,
     ))
@@ -1274,7 +1270,7 @@ def generate_fund_request_pdf(fund_request):
     story.append(Spacer(1, 2))
 
     sec1_body = Paragraph(
-        f"ข้าพเจ้า {requester if not is_type_31 else 'ไม่พบข้อมูล'} ตำแหน่ง {requester_pos  if not is_type_31 else 'ไม่พบข้อมูล'} มีความประสงค์ขอยืมเงินสดย่อย<br/>"
+        f"ข้าพเจ้า {requester or 'ไม่พบข้อมูล'} ตำแหน่ง {requester_pos} มีความประสงค์ขอยืมเงินสดย่อย<br/>"
         f"เพื่อ{purpose  if not is_type_31 else 'ไม่พบข้อมูลว'} มีรายละเอียดดังนี้",
         styles['ThaiNormal']
     )

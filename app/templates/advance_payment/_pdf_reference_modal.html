@@ -13,7 +13,7 @@
           {% else %}
           <p class="text-muted small">ระบบจะจำค่าที่บันทึกไว้ และเปิดให้ตรวจสอบหรือแก้ไขได้ทุกครั้งก่อนส่งออก</p>
           {% endif %}
-          {% set fiscal_year_suggested = document.fiscal_year or ((pdf_fiscal_year_default + 543) if pdf_fiscal_year_default else '') %}
+          {% set fiscal_year_suggested = ((document.fiscal_year if document.fiscal_year >= 2400 else document.fiscal_year + 543) if document.fiscal_year else ((pdf_fiscal_year_default + 543) if pdf_fiscal_year_default else '')) %}
           <div class="mb-3">
             <label class="form-label fw-bold">ปีงบประมาณ</label>
             <input

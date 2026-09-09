@@ -88,8 +88,6 @@
               <td>
                 {% if row.is_opening_row %}
                   1
-                {% elif row.status == "โอนเงินสดย่อยสำเร็จ" %}
-                  {{ row.transferred_at.day if row.transferred_at else '-' }}
                 {% else %}
                   {{ row.receipt_date.day if row.receipt_date else '-' }}
                 {% endif %}
@@ -128,7 +126,7 @@
               <td class="text-end fw-bold text-primary">
                 {{ "{:,.2f}".format(row.running_balance) if row.running_balance is not none else '-' }}
               </td>
-              <td>{{ row.submitted_date.strftime('%d/%m/%Y') if row.submitted_date else '-' }}</td>
+              <td>{{ row.created_at.strftime('%d/%m/%Y') if row.created_at else '-' }}</td>
             </tr>
             {% else %}
             <tr>

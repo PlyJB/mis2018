@@ -503,7 +503,7 @@ class BankAccountInfo(db.Model):
     org_id = Column(Integer, ForeignKey("orgs.id"), nullable=True, index=True)
     thai_name = Column(String(255), nullable=False)
     account_number = Column(String(10), nullable=False)
-    created_at = Column(DateTime, nullable=False, server_default=func.now()) # editable
+    closed_at = Column(DateTime, nullable=True)
 
     @property
     def org(self):

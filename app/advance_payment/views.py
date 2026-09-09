@@ -63,7 +63,7 @@ FINANCE_SYSTEM = "finance"
 AVAILABLE_SYSTEMS = (FINANCE_SYSTEM, PETTY_CASH_SYSTEM, ADVANCE_PAYMENT_SYSTEM)
 FUND_REQUEST_FORM_BORROWING_TICKET = "32"
 FUND_REQUEST_NUMBERED_STATUSES = {"อนุมัติแล้ว", "เบิกเงินแล้ว", "ส่งเบิกครบแล้ว", "เคลียร์ยอดสำเร็จ"}
-FUND_REQUEST_STATUS_STEPS = ["อนุมัติแล้ว", "เบิกเงินแล้ว", "ส่งเบิกครบแล้ว", "เคลียร์ยอดสำเร็จ"]
+FUND_REQUEST_STATUS_STEPS = ["อนุมัติแล้ว", "ส่งเบิกครบแล้ว", "เคลียร์ยอดสำเร็จ"]
 RETURN_DETAIL_BOUNCED_STATUS = "ฎีกาถูกตีกลับจากกองคลัง"
 STATUS_NORMALIZATION_MAP = {
     "waiting": "รอตรวจสอบ",
@@ -615,6 +615,7 @@ def _get_finance_visible_claim(claim_id):
 def _get_bank_account_dropdown_options():
     bank_accounts = (
         db.session.query(BankAccountInfo)
+        .filter(BankAccountInfo.closed_at.is_(None))
         .order_by(
             BankAccountInfo.thai_name.asc(),
             BankAccountInfo.account_number.asc(),
@@ -645,7 +646,7 @@ def _get_bank_account_dropdown_options():
 
 
 def _get_bank_account_info(*, bank_account_info_id=None, account_number=None):
-    query = db.session.query(BankAccountInfo)
+    query = db.session.query(BankAccountInfo).filter(BankAccountInfo.closed_at.is_(None))
 
     if bank_account_info_id:
         try:
@@ -780,7 +781,12 @@ def _calculate_petty_cash_balance_summary(setting, *, user_id=None):
         approved_fund_requests = [
             fund_request
             for fund_request in approved_fund_requests
-            if (fund_request.status or "").strip() not in {"ปฏิเสธ", "ยกเลิก", "กำลังดำเนินการ"}
+            if (fund_request.status or "").strip() not in {
+                "ปฏิเสธ",
+                "ยกเลิก",
+                "กำลังดำเนินการ",
+                "เบิกเงินแล้ว",
+            }
             and getattr(fund_request, "request_date", None)
             and convert_to_fiscal_year(fund_request.request_date) == current_fiscal_year
         ]
@@ -836,6 +842,9 @@ def _get_approved_borrowing_tickets_for_setting(setting):
         .filter(
             BorrowingTicket.account_number == setting.account_number,
             BorrowingTicket.approved_at.isnot(None),
+            ~db.session.query(FundRequest.id).filter(
+                FundRequest.borrowing_ticket_id == BorrowingTicket.id,
+            ).exists(),
         )
         .order_by(BorrowingTicket.approved_at.asc(), BorrowingTicket.created_at.asc())
         .all()
@@ -2079,30 +2088,34 @@ def coordinator_dashboard():
             )
             if selected_bank_account:
                 selected_account_number = selected_bank_account.account_number
+            elif selected_account_number:
+                flash("เลขที่บัญชีนี้ถูกปิดแล้วหรือไม่อยู่ในรายการที่เลือกได้", "danger")
+                selected_account_number = ""
 
-            new_ticket = BorrowingTicket(
-                creator_id=current_user.id,
-                borrower_id=coordinator_user.id,
-                borrowing_ticket_purpose=form.borrowing_ticket_purpose.data.strip(),
-                required_budget=form.required_budget.data,
-                account_number=selected_account_number,
-                bank_account_info_id=selected_bank_account.id if selected_bank_account else None,
-                borrowing_ticket_start_date=form.borrowing_ticket_start_date.data,
-                borrowing_ticket_end_date=form.borrowing_ticket_end_date.data,
-                due_date=_calculate_due_date(form.borrowing_ticket_end_date.data),
-                aip_ref_no=form.aip_ref_no.data,
-                aip_ref_date=form.aip_ref_date.data,
-                status="กำลังส่งคำขอ",
-                created_at=datetime.utcnow()
-            )
-            new_ticket.creator_user = current_user
-            new_ticket.borrower_user = coordinator_user
-            db.session.add(new_ticket)
-            db.session.commit()
+            if selected_bank_account:
+                new_ticket = BorrowingTicket(
+                    creator_id=current_user.id,
+                    borrower_id=coordinator_user.id,
+                    borrowing_ticket_purpose=form.borrowing_ticket_purpose.data.strip(),
+                    required_budget=form.required_budget.data,
+                    account_number=selected_account_number,
+                    bank_account_info_id=selected_bank_account.id if selected_bank_account else None,
+                    borrowing_ticket_start_date=form.borrowing_ticket_start_date.data,
+                    borrowing_ticket_end_date=form.borrowing_ticket_end_date.data,
+                    due_date=_calculate_due_date(form.borrowing_ticket_end_date.data),
+                    aip_ref_no=form.aip_ref_no.data,
+                    aip_ref_date=form.aip_ref_date.data,
+                    status="กำลังส่งคำขอ",
+                    created_at=datetime.utcnow()
+                )
+                new_ticket.creator_user = current_user
+                new_ticket.borrower_user = coordinator_user
+                db.session.add(new_ticket)
+                db.session.commit()
 
-            flash(f"สร้างสัญญาเงินยืมทดรองจ่ายแทน {coordinator_user.name} เรียบร้อยแล้ว", "success")
-            _send_notification_email(new_ticket)
-            return redirect(url_for(_dashboard_endpoint_for_role(user_role), download_ticket_id=new_ticket.id))
+                flash(f"สร้างสัญญาเงินยืมทดรองจ่ายแทน {coordinator_user.name} เรียบร้อยแล้ว", "success")
+                _send_notification_email(new_ticket)
+                return redirect(url_for(_dashboard_endpoint_for_role(user_role), download_ticket_id=new_ticket.id))
 
     dashboard_template = "borrower_dashboard.html" if is_borrower_mode else "coordinator_dashboard.html"
     bank_account_options = _get_bank_account_dropdown_options()
@@ -2362,7 +2375,7 @@ def finance_bank_account_registry():
     form = BankAccountInfoForm()
     form.record_type.choices = list(BANK_ACCOUNT_TYPE_LABELS.items())
 
-    def _parse_bank_account_created_at(raw_value):
+    def _parse_bank_account_closed_at(raw_value):
         value = (raw_value or "").strip()
         if not value:
             return None
@@ -2381,7 +2394,7 @@ def finance_bank_account_registry():
         row_types = request.form.getlist("record_type[]")
         row_org_ids = request.form.getlist("org_id[]")
         row_thai_names = request.form.getlist("thai_name[]")
-        row_created_ats = request.form.getlist("created_at[]")
+        row_closed_ats = request.form.getlist("closed_at[]")
         row_account_numbers = request.form.getlist("account_number[]")
 
         errors = []
@@ -2389,22 +2402,26 @@ def finance_bank_account_registry():
         existing_accounts = db.session.query(BankAccountInfo).all()
         submitted_account_numbers = {}
 
-        for index, (raw_id, raw_type, raw_org_id, raw_thai, raw_created_at, raw_account) in enumerate(
-            zip(row_ids, row_types, row_org_ids, row_thai_names, row_created_ats, row_account_numbers),
+        for index, (raw_id, raw_type, raw_org_id, raw_thai, raw_closed_at, raw_account) in enumerate(
+            zip(row_ids, row_types, row_org_ids, row_thai_names, row_closed_ats, row_account_numbers),
             start=1,
         ):
             record_type = (raw_type or "").strip()
             org_id = int(raw_org_id) if (raw_org_id or "").strip().isdigit() else None
             thai_name = (raw_thai or "").strip()
-            created_at = _parse_bank_account_created_at(raw_created_at)
+            closed_at = _parse_bank_account_closed_at(raw_closed_at)
             account_number = (raw_account or "").strip()
             record_id = (raw_id or "").strip()
             account_digits = account_number
 
-            if not any([record_type, org_id, thai_name, created_at, account_number, record_id]):
+            if not any([record_type, org_id, thai_name, closed_at, account_number, record_id]):
                 continue
 
-            if not all([record_type, org_id, thai_name, created_at, account_number]):
+            if raw_closed_at and closed_at is None:
+                errors.append(f"แถวที่ {index} กรุณาระบุวันที่ปิดบัญชีให้ถูกต้อง")
+                continue
+
+            if not all([record_type, org_id, thai_name, account_number]):
                 errors.append(f"แถวที่ {index} กรุณากรอกข้อมูลให้ครบทุกช่อง")
                 continue
 
@@ -2439,7 +2456,7 @@ def finance_bank_account_registry():
                 record.record_type = record_type
                 record.org_id = org_id
                 record.thai_name = thai_name
-                record.created_at = created_at
+                record.closed_at = closed_at
                 record.account_number = account_number
             else:
                 db.session.add(
@@ -2447,7 +2464,7 @@ def finance_bank_account_registry():
                         record_type=record_type,
                         org_id=org_id,
                         thai_name=thai_name,
-                        created_at=created_at,
+                        closed_at=closed_at,
                         account_number=account_number,
                     )
                 )
@@ -2474,12 +2491,12 @@ def finance_bank_account_registry():
 
     if request.method == "POST":
         edit_rows = []
-        for raw_id, raw_type, raw_org_id, raw_thai, raw_created_at, raw_account in zip(
+        for raw_id, raw_type, raw_org_id, raw_thai, raw_closed_at, raw_account in zip(
             request.form.getlist("record_id[]"),
             request.form.getlist("record_type[]"),
             request.form.getlist("org_id[]"),
             request.form.getlist("thai_name[]"),
-            request.form.getlist("created_at[]"),
+            request.form.getlist("closed_at[]"),
             request.form.getlist("account_number[]"),
         ):
             edit_rows.append(
@@ -2492,7 +2509,7 @@ def finance_bank_account_registry():
                         "",
                     ),
                     "thai_name": raw_thai,
-                    "created_at": raw_created_at,
+                    "closed_at": raw_closed_at,
                     "account_number": raw_account,
                 }
             )
@@ -2504,7 +2521,7 @@ def finance_bank_account_registry():
                 "org_id": record.org_id,
                 "org_name": record.org.name if record.org else "",
                 "thai_name": record.thai_name,
-                "created_at": record.created_at,
+                "closed_at": record.closed_at,
                 "account_number": record.account_number,
             }
             for record in records
@@ -4127,6 +4144,9 @@ def petty_cash_settings():
             bank_account_info_id = selected_bank_account.id if selected_bank_account else None
             if selected_bank_account and selected_bank_account.account_number:
                 acc = selected_bank_account.account_number
+            elif acc:
+                errors.append(f"แถวที่ {i + 1} เลขที่บัญชีนี้ถูกปิดแล้วหรือไม่อยู่ในรายการที่ใช้งานได้")
+                continue
             is_valid = name in valid_dept_names
 
             if name and bg_str and acc and fy_str:
@@ -4836,10 +4856,7 @@ def staff_fund_request():
             req_date = form.request_date.data if form.request_date.data else datetime.now().date()
             receive_interest = _coerce_date(request.form.get("receive_interest"))
             withdraw_intrest = _coerce_date(request.form.get("withdraw_intrest"))
-            if form_type == '31':
-                req_name = user_display_name
-                req_pos = user_display_position or "ไม่พบข้อมูลตำแหน่ง"
-            elif form_type == FUND_REQUEST_FORM_BORROWING_TICKET:
+            if form_type == FUND_REQUEST_FORM_BORROWING_TICKET:
                 borrowing_ticket_id = request.form.get("borrowing_ticket_id", type=int)
                 if not borrowing_ticket_id:
                     flash("กรุณาเลือกใบยืมเงินที่ต้องการเบิกผ่านบัญชีเงินสดย่อย", "danger")
@@ -4850,21 +4867,20 @@ def staff_fund_request():
                     None,
                 )
                 if not selected_borrowing_ticket:
-                    flash("ไม่พบใบยืมเงินที่สามารถใช้งานได้สำหรับหน่วยงานนี้", "danger")
+                    flash("ไม่พบใบยืมเงินที่สามารถใช้งานได้สำหรับหน่วยงานนี้ หรือใบยืมเงินถูกใช้สร้างใบเบิกแล้ว", "danger")
                     return redirect(url_for("advance_payment.staff_fund_request", form_type=FUND_REQUEST_FORM_BORROWING_TICKET))
 
                 borrower_user = getattr(selected_borrowing_ticket, "borrower_user", None)
                 if is_secretary:
                     requester_id = getattr(borrower_user, "id", None) or selected_borrowing_ticket.borrower_id or user.id
                     req_name = selected_borrowing_ticket.borrower_name or getattr(borrower_user, "name", "") or user_display_name
-                    req_pos = getattr(borrower_user, "position", "") or user_display_position or "ไม่พบข้อมูล"
+                    req_pos = getattr(borrower_user, "position", "") or user_display_position or "ไม่พบข้อมูลตำแหน่ง"
                 else:
                     requester_id = user.id
                     req_name = user_display_name
-                    req_pos = user_display_position or "ไม่พบข้อมูล"
+                    req_pos = user_display_position or "ไม่พบข้อมูลตำแหน่ง"
                 req_dept = _get_staff_department_name(borrower_user, req_dept) or req_dept
                 req_acc = selected_borrowing_ticket.account_number or req_acc
-                req_date = datetime.now().date()
             else:
                 if is_secretary:
                     selected_requester_id = request.form.get("requester_id", type=int)
@@ -4887,7 +4903,7 @@ def staff_fund_request():
             if form_type == FUND_REQUEST_FORM_BORROWING_TICKET and selected_borrowing_ticket:
                 requested_amount = float(selected_borrowing_ticket.required_budget or 0.0)
 
-            if requested_amount > available_budget:
+            if form_type not in {'31', FUND_REQUEST_FORM_BORROWING_TICKET} and requested_amount > available_budget:
                 flash(
                     f"ยอดขอเบิก {requested_amount:,.2f} บาท เกินยอดคงเหลือ {available_budget:,.2f} บาท กรุณาปรับจำนวนเงินก่อนส่งแบบฟอร์ม",
                     "danger",
@@ -4897,7 +4913,7 @@ def staff_fund_request():
                     redirect_kwargs["borrowing_ticket_id"] = selected_borrowing_ticket.id
                 return redirect(url_for("advance_payment.staff_fund_request", **redirect_kwargs))
 
-            # รายการใหม่ถือว่าอนุมัติแล้วทันที และออกเลขที่ใบเบิกตั้งแต่ตอนสร้าง
+            # รายการใหม่ออกเลขที่ใบเบิกทันที โดย type 32 ถือว่าเบิกเงินแล้ว
             new_request = FundRequest(
                 requester_id=requester_id,
                 creator_id=user.id,
@@ -4912,7 +4928,7 @@ def staff_fund_request():
                 period_year=_normalize_interest_period_value(request.form.get("period_year")) if form_type == '31' else "",
                 borrowing_ticket_id=selected_borrowing_ticket.id if selected_borrowing_ticket else None,
                 created_at=datetime.now(),
-                status="อนุมัติแล้ว"
+                status="เบิกเงินแล้ว" if form_type == FUND_REQUEST_FORM_BORROWING_TICKET else "อนุมัติแล้ว"
             )
 
             db.session.add(new_request)
@@ -5255,6 +5271,10 @@ def _save_pdf_reference_data(document, borrowing_ticket=None):
     try:
         fiscal_year = int(fiscal_year)
     except ValueError:
+        abort(400, description="ปีงบประมาณไม่ถูกต้อง")
+    if fiscal_year >= 2400:
+        fiscal_year -= 543
+    if fiscal_year <= 0:
         abort(400, description="ปีงบประมาณไม่ถูกต้อง")
 
     document.reference_number = reference_number
@@ -6166,7 +6186,7 @@ def petty_cash_ledger():
 
             if fund_in_date:
                 _append_ledger_row(
-                    receipt_date=fund_in_date,
+                    receipt_date=fr.request_date,
                     created_at=created_at,
                     description=f"ดอกเบี้ยจากธนาคาร",
                     bank_income=amt,
@@ -6179,8 +6199,8 @@ def petty_cash_ledger():
 
             if withdrawal_date:
                 _append_ledger_row(
-                    receipt_date=withdrawal_date,
-                    created_at=created_at + timedelta(microseconds=1),
+                    receipt_date=fr.request_date,
+                    created_at=created_at,
                     description=f"เบิกดอกเบี้ย {ticket_label}",
                     bank_expense=amt,
                     cat_11=amt,
@@ -6201,7 +6221,7 @@ def petty_cash_ledger():
         custom_category = next((item.description for item in fr.items if str(item.category_type) == "5" and item.description), None)
 
         _append_ledger_row(
-            receipt_date=fr.request_date or fr.created_at.date(),
+            receipt_date=fr.request_date,
             created_at=fr.created_at,
             description=f"{fr.purpose or fr.department_name} {ticket_label}",
             bank_expense=amt,  # ยอดรายจ่ายเบิกเงินสดย่อย
@@ -6236,7 +6256,7 @@ def petty_cash_ledger():
             borrow_amount = float(ticket.required_budget or 0)
             _append_ledger_row(
                 receipt_date=approved_at.date(),
-                created_at=approved_at or ticket.created_at,
+                created_at=ticket.created_at,
                 description=f"เงินยืมตามสัญญา บ.ย. {ticket.number or '-'}",
                 bank_income=borrow_amount,
                 cat_11=borrow_amount,

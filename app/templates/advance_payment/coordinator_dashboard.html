@@ -145,6 +145,10 @@
                     <label for="account_number" class="form-label fw-bold">เลขที่บัญชี</label>
                     <select id="account_number" name="account_number" class="form-select" required onchange="syncBankAccountInfo(this)">
                       <option value="">พิมพ์เพื่อค้นหาหรือเลือกเลขที่บัญชี</option>
+                      {% set selected_account_number = borrowing_ticket_form.account_number.data or '' %}
+                      {% if selected_account_number and selected_account_number not in bank_account_values %}
+                        <option value="{{ selected_account_number }}" disabled selected>{{ selected_account_number }} - บัญชีที่ไม่สามารถเลือกได้</option>
+                      {% endif %}
                       {% for account in bank_account_options %}
                         <option value="{{ account.value }}" data-bank-account-id="{{ account.id }}" {% if borrowing_ticket_form.account_number.data == account.value %}selected{% endif %}>{{ account.label }}</option>
                       {% endfor %}
