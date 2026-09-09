@@ -1852,7 +1852,15 @@ def logout():
 def coordinator_dashboard():
     user_id = session.get("user_id")
     user_role = session.get("user_role")
-    is_borrower_mode = not _is_current_coordinator()
+    is_borrower_mode = (
+        request.endpoint == "advance_payment.borrower_dashboard"
+        or not _is_current_coordinator()
+    )
+    dashboard_endpoint = (
+        "advance_payment.borrower_dashboard"
+        if is_borrower_mode
+        else "advance_payment.coordinator_dashboard"
+    )
     current_user = db.session.query(StaffAccount).filter_by(id=user_id).first()
     if not current_user:
         abort(404)
@@ -1978,7 +1986,7 @@ def coordinator_dashboard():
         totals = _calculate_ticket_return_totals(ticket.id)
         ticket_display_totals = _calculate_ticket_return_totals_with_parcel(
             ticket.id,
-            exclude_return_id=draft_detail.id if draft_detail else None,
+            exclude_return_id=ticket.draft_detail.id if ticket.draft_detail else None,
         )
         ticket.parcel_return_total = ticket_display_totals["parcel_total"]
         ticket.submitted_return_total = ticket_display_totals["cumulative_total"]
@@ -2034,7 +2042,7 @@ def coordinator_dashboard():
                 "คุณยังไม่สามารถสร้างสัญญาเงินยืมใหม่ได้ เนื่องจากมีรายการค้างที่ต้องดำเนินการก่อน",
                 "warning",
             )
-            return redirect(url_for(_dashboard_endpoint_for_role(user_role)))
+            return redirect(url_for(dashboard_endpoint))
 
         # ผู้ยืมสร้างได้เฉพาะของตัวเอง ส่วนผู้ประสานงานเลือกแทนได้
         selected_coordinator_email = (
@@ -2044,7 +2052,7 @@ def coordinator_dashboard():
         )
         if not selected_coordinator_email:
             flash(f"กรุณาเลือก{_dashboard_party_label(user_role)}ก่อนสร้างสัญญาเงินยืม", "danger")
-            return redirect(url_for(_dashboard_endpoint_for_role(user_role)))
+            return redirect(url_for(dashboard_endpoint))
 
         coordinator_user = (
             db.session.query(StaffAccount)
@@ -2054,7 +2062,7 @@ def coordinator_dashboard():
 
         if not coordinator_user:
             flash(f"ไม่พบข้อมูล{_dashboard_party_label(user_role)}ที่ระบุในระบบ", "danger")
-            return redirect(url_for(_dashboard_endpoint_for_role(user_role)))
+            return redirect(url_for(dashboard_endpoint))
 
         allowed_coordinator_emails = {
             user.email.strip().lower()
@@ -2063,7 +2071,7 @@ def coordinator_dashboard():
         }
         if coordinator_user.email.strip().lower() not in allowed_coordinator_emails:
             flash(f"ไม่พบ{_dashboard_party_label(user_role)}ที่ระบุในระบบ", "danger")
-            return redirect(url_for(_dashboard_endpoint_for_role(user_role)))
+            return redirect(url_for(dashboard_endpoint))
 
         # ตรวจสอบสิทธิ์ความสามารถในการยืมเงินของผู้ยืมจริง (Borrower) ด้วย calculate_borrowing_ticket_eligibility
         coordinator_eligibility = eligibility_by_email.get(
@@ -2077,7 +2085,7 @@ def coordinator_dashboard():
                 f"(สถานะที่ยังค้างอยู่: {', '.join(coordinator_eligibility.blocking_statuses)})",
                 "danger"
             )
-            return redirect(url_for(_dashboard_endpoint_for_role(user_role)))
+            return redirect(url_for(dashboard_endpoint))
 
         if form.validate():
             # บันทึกผู้สร้างสัญญาและผู้ยืมจริงแยกกันด้วย creator_id / borrower_id
@@ -2115,7 +2123,7 @@ def coordinator_dashboard():
 
                 flash(f"สร้างสัญญาเงินยืมทดรองจ่ายแทน {coordinator_user.name} เรียบร้อยแล้ว", "success")
                 _send_notification_email(new_ticket)
-                return redirect(url_for(_dashboard_endpoint_for_role(user_role), download_ticket_id=new_ticket.id))
+                return redirect(url_for(dashboard_endpoint, download_ticket_id=new_ticket.id))
 
     dashboard_template = "borrower_dashboard.html" if is_borrower_mode else "coordinator_dashboard.html"
     bank_account_options = _get_bank_account_dropdown_options()
@@ -2123,7 +2131,7 @@ def coordinator_dashboard():
 
     return render_template(
         dashboard_template,
-        dashboard_title=f"แดชบอร์ด{_dashboard_party_label(user_role)}",
+        dashboard_title="แดชบอร์ดผู้ยืม" if is_borrower_mode else f"แดชบอร์ด{_dashboard_party_label(user_role)}",
         dashboard_description=(
             "มุมมองส่วนตัวสำหรับจัดการสัญญาเงินยืมและเอกสารส่งใช้ของคุณ"
             if is_borrower_mode
@@ -2133,6 +2141,7 @@ def coordinator_dashboard():
         dashboard_party_label=_dashboard_party_label(user_role),
         dashboard_party_scope="เฉพาะตัวเอง" if is_borrower_mode else "บุคลากรทั้งองค์กร",
         dashboard_can_choose_proxy=not is_borrower_mode,
+        dashboard_is_coordinator=_is_current_coordinator(),
         borrowing_ticket_history=borrowing_ticket_history,
         return_details=return_details,
         borrowing_ticket_form=form,

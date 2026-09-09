@@ -7,6 +7,11 @@
     <p class="text-uppercase fw-bold text-primary small tracking-wide mb-1" style="letter-spacing: 0.12em;">พื้นที่สำหรับผู้ประสานงาน</p>
     <h1 class="fw-bold display-6 mb-2">{{ dashboard_title }}</h1>
     <p class="text-muted mb-0">{{ dashboard_description }}</p>
+    <div class="text-end mt-3">
+      <a href="{{ url_for('advance_payment.borrower_dashboard') }}" class="btn btn-outline-primary">
+        <i class="bi bi-person me-2" aria-hidden="true"></i>เบิกเงินยืมสำหรับตนเอง
+      </a>
+    </div>
   </header>
 
   <!-- Summary Cards Section -->
@@ -203,6 +208,9 @@
             </div>
             {% for borrowing_ticket in actionable_tickets %}
               <div class="return-ticket-form-block d-none" id="return_block_ticket_{{ borrowing_ticket.id }}">
+                {% if (borrowing_ticket.submitted_return_total or 0)|float >= (borrowing_ticket.required_budget or 0)|float %}
+                  <p class="text-muted text-center my-4">ได้ทำการส่งเอกสารเบิกครบแล้ว รอการตรวจสอบจากฝ่ายการเงิน</p>
+                {% else %}
                 <div class="card p-4 bg-light mb-4 border rounded-4 shadow-sm">
                   <div class="d-flex justify-content-between align-items-center mb-3">
                   </div>
@@ -388,6 +396,7 @@
                     </div>
                   </form>
                 </div>
+                {% endif %}
               </div>
             {% endfor %}
           {% else %}

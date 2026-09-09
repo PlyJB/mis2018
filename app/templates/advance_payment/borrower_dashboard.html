@@ -7,6 +7,13 @@
     <p class="text-uppercase fw-bold text-primary small tracking-wide mb-1" style="letter-spacing: 0.12em;">พื้นที่สำหรับผู้ยืม</p>
     <h1 class="fw-bold display-6 mb-2">{{ dashboard_title }}</h1>
     <p class="text-muted mb-0">{{ dashboard_description }}</p>
+    {% if dashboard_is_coordinator %}
+      <div class="text-end mt-3">
+        <a href="{{ url_for('advance_payment.coordinator_dashboard') }}" class="btn btn-outline-primary">
+          <i class="bi bi-arrow-left me-2" aria-hidden="true"></i>กลับหน้าผู้ประสานงาน
+        </a>
+      </div>
+    {% endif %}
   </header>
 
   <!-- Summary Cards Section -->
@@ -176,7 +183,13 @@
           {% set ticket_status = borrowing_ticket.status %}
           {% if ticket_status in ['อนุมัติจ่ายเงิน', 'มียอดคงค้าง'] %}
             {% set ns.has_actionable_tickets = true %}
-            
+
+            {% if (borrowing_ticket.submitted_return_total or 0)|float >= (borrowing_ticket.required_budget or 0)|float %}
+              <div class="text-center my-4">
+                <p class="fw-bold mb-1">{{ borrowing_ticket.borrowing_ticket_purpose }}</p>
+                <p class="text-muted mb-0">ได้ทำการส่งเอกสารเบิกครบแล้ว รอการตรวจสอบจากฝ่ายการเงิน</p>
+              </div>
+            {% else %}
             <div class="card p-4 bg-light mb-4 border rounded-4 shadow-sm">
               <h3 class="h5 fw-bold text-dark mb-3">ชื่อโครงการ/วัตถุประสงค์: {{ borrowing_ticket.borrowing_ticket_purpose }}</h3>
               
@@ -361,6 +374,7 @@
                 </div>
               </form>
             </div>
+            {% endif %}
           {% endif %}
         {% endfor %}
 
