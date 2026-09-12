@@ -543,6 +543,12 @@
           titleElement.textContent = config.title || "ยืนยันการทำรายการ";
           messageElement.textContent = config.message || "";
           fieldWrapElement.innerHTML = buildField(config);
+          if (config.extraFieldsTemplateId) {
+            const template = document.getElementById(config.extraFieldsTemplateId);
+            if (template instanceof HTMLTemplateElement) {
+              fieldWrapElement.appendChild(template.content.cloneNode(true));
+            }
+          }
           acknowledgementWrapElement.innerHTML = buildAcknowledgement(config);
           acknowledgementWrapElement.classList.toggle("d-none", !config.requireAcknowledgement);
           formElement.action = config.action || "";
@@ -661,6 +667,7 @@
             inputLabel: trigger.dataset.popupInputLabel,
             inputRows: trigger.dataset.popupInputRows,
             inputRequired: trigger.dataset.popupInputRequired === "true",
+            extraFieldsTemplateId: trigger.dataset.popupExtraFieldsTemplateId,
             requireAcknowledgement: trigger.dataset.popupRequireAcknowledgement === "true",
             acknowledgementLabel: trigger.dataset.popupAcknowledgementLabel,
             targetFormId: trigger.dataset.popupTargetFormId,

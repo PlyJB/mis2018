@@ -32,6 +32,16 @@
         <p class="mb-0 text-dark fw-semibold">{{borrowing_ticket.number}}</p>
     </div></br>
     <div class="row g-3 text-start mb-3">
+      <div class="col-12 col-md-4">
+        <p class="text-muted small mb-1"><strong>เลขที่อว.อนุมัติยืมเงิน</strong></p>
+        <p class="mb-0 text-dark fw-semibold">{{ borrowing_ticket.borrowing_approval_ref_no or '-' }}</p>
+      </div>
+      <div class="col-12 col-md-4">
+        <p class="text-muted small mb-1"><strong>วันที่อนุมัติ</strong></p>
+        <p class="mb-0 text-dark fw-semibold">{{ borrowing_ticket.borrowing_approval_date|thai_date if borrowing_ticket.borrowing_approval_date else '-' }}</p>
+      </div>
+    </div>
+    <div class="row g-3 text-start mb-3">
       <div class="col-6 col-md-4">
         <p class="text-muted small mb-1"><strong>ผู้ยืม</strong></p>
         <p class="mb-0 text-dark fw-semibold">{{ borrowing_ticket.borrower_name }}</p>
@@ -119,16 +129,27 @@
             class="btn btn-primary btn-sm fw-bold px-3 py-1.5"
             data-popup-trigger="true"
             data-popup-title="ทำการใส่เลขที่สัญญา"
-            data-popup-message="โปรดระบุเลขที่สัญญาเพื่ออนุมัติสัญญานี้"
+            data-popup-message="โปรดระบุเลขที่สัญญา เลขที่อว.อนุมัติยืมเงิน และวันที่อนุมัติ"
             data-popup-action="{{ url_for('advance_payment.approve_borrowing_ticket', ticket_id=borrowing_ticket.id) }}"
             data-popup-confirm-text="ยืนยันการสร้างสัญญา"
             data-popup-input-type="text"
             data-popup-input-name="number"
             data-popup-input-placeholder="เลขที่บย. เช่น 12/2569"
+            data-popup-extra-fields-template-id="borrowingApprovalFields"
             data-popup-input-required="true"
             data-popup-input-rows="1">
               อนุมัติสัญญา
           </button>
+          <template id="borrowingApprovalFields">
+            <div class="mt-3">
+              <label for="borrowingApprovalRefNo" class="form-label">เลขที่อว.อนุมัติยืมเงิน</label>
+              <input id="borrowingApprovalRefNo" type="text" name="borrowing_approval_ref_no" class="form-control" placeholder="เลขที่อว.อนุมัติยืมเงิน" maxlength="255" required>
+            </div>
+            <div class="mt-3">
+              <label for="borrowingApprovalDate" class="form-label">วันที่อนุมัติ</label>
+              <input id="borrowingApprovalDate" type="date" name="borrowing_approval_date" class="form-control" required>
+            </div>
+          </template>
 
           <button
             type="button"

@@ -318,6 +318,7 @@ def generate_petty_cash_monthly_report_pdf(*, setting, month_start, remaining_bu
     department_name = setting.department_name or missing_department_notice()
     department = escape(str(department_name))
     dept_info = get_department_info_from_api(department_name)
+    dept_info = _apply_borrower_head(dept_info, getattr(setting, "custodian_id", None))
     head_name = escape(str(dept_info.get("head") or "......................................................."))
     head_pos = escape(str(dept_info.get("head_position") or "........................................"))
     telephone = escape(str(telephone_number or "................................"))
@@ -364,10 +365,9 @@ def generate_petty_cash_monthly_report_pdf(*, setting, month_start, remaining_bu
         Spacer(1, 4)])
     rows = [
         [p("ลำดับที่", center), p("รายการ", center), p("จำนวนเงิน", center)],
-        [p("1", center), p("เงินสด"), p("-", right)],
-        [p("2", center), p("เงินฝากอยู่ในบัญชีเงินฝากออมทรัพย์ 1 เล่ม"), p(f"{balance:,.2f}", right)],
-        [p("3", center), p(f'เอกสารเบิกจ่ายที่ส่งเบิกมาแล้ว รวม {summary["submitted_count"]} ฉบับ'), p(f"{submitted:,.2f}", right)],
-        [p("4", center), p(f'เอกสารเบิกจ่ายที่ยังไม่ส่งเบิก รวม {summary["pending_count"]} ฉบับ'), p(f"{pending:,.2f}", right)],
+        [p("1", center), p("เงินฝากอยู่ในบัญชีเงินฝากออมทรัพย์ 1 เล่ม"), p(f"{balance:,.2f}", right)],
+        [p("2", center), p(f'เอกสารเบิกจ่ายที่ส่งเบิกมาแล้ว รวม {summary["submitted_count"]} ฉบับ'), p(f"{submitted:,.2f}", right)],
+        [p("3", center), p(f'เอกสารเบิกจ่ายที่ยังไม่ส่งเบิก รวม {summary["pending_count"]} ฉบับ'), p(f"{pending:,.2f}", right)],
         ["", p(f"ตัวอักษร ({escape(bahttext(total))}) <b>รวมทั้งสิ้น</b>", right), p(f"<b>{total:,.2f}</b>", right)],
     ]
     table = Table(rows, colWidths=[44, doc.width - 156, 112])
@@ -795,7 +795,7 @@ def generate_petty_claim(claim, document_kind="petty_claim"):
     reference_number = getattr(claim, "reference_number", None) or claim_number
     reference_date = getattr(claim, "reference_date", None)
     reference_date_label = get_thai_month_year(reference_date) if reference_date else date_thai
-    product_name = getattr(getattr(claim, "product_code", None), "name", None) or "........................................"
+    product_name = getattr(getattr(claim, "product_code", None), "id", None) or "........................................"
     cost_center_label = getattr(getattr(claim, "cost_center", None), "id", None) or "........................................"
     mission_label = getattr(getattr(claim, "iocode", None), "mission_id", None) or "........................................"
 
@@ -1695,6 +1695,7 @@ def generate_petty_cash_ledger_pdf(*, setting, month_start, ledger_items):
     ]))
     department = escape(str(setting.department_name or ""))
     info = get_department_info_from_api(setting.department_name)
+    info = _apply_borrower_head(info, getattr(setting, "custodian_id", None))
     keeper_name = escape(str(info.get("keeper") or "......................................................."))
     keeper_pos = escape(str(info.get("position") or "........................................"))
     head_name = escape(str(info.get("head") or "......................................................."))

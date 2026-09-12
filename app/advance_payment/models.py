@@ -107,6 +107,8 @@ class CashAdvanceBorrowingTicket(db.Model):
 
     id = Column(Integer, primary_key=True)
     number = Column(String, nullable=True)
+    borrowing_approval_ref_no = Column(String(255), nullable=True)
+    borrowing_approval_date = Column(Date, nullable=True)
     creator_id = Column(Integer, ForeignKey("staff_account.id"), nullable=False)
     borrower_id = Column(Integer, ForeignKey("staff_account.id"), nullable=False)
     status = Column(String(64), nullable=False, default="กำลังส่งคำขอ")

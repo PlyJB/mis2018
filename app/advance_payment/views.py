@@ -3763,10 +3763,23 @@ def approve_borrowing_ticket(ticket_id):
         flash("กรุณาระบุเลขที่สัญญา")
         return redirect(url_for("advance_payment.verification_view", ticket_id=ticket_id))
 
+    approval_ref_no = (request.form.get("borrowing_approval_ref_no") or "").strip()
+    raw_approval_date = (request.form.get("borrowing_approval_date") or "").strip()
+    if not approval_ref_no:
+        flash("กรุณาระบุเลขที่อว.อนุมัติยืมเงิน")
+        return redirect(url_for("advance_payment.verification_view", ticket_id=ticket_id))
+    try:
+        approval_date = datetime.strptime(raw_approval_date, "%Y-%m-%d").date()
+    except ValueError:
+        flash("กรุณาระบุวันที่อนุมัติให้ถูกต้อง")
+        return redirect(url_for("advance_payment.verification_view", ticket_id=ticket_id))
+
     # Contract numbers may contain prefixes, separators, or leading zeroes.
     number = raw_number
     borrowing_ticket.status = "อนุมัติจ่ายเงิน"
     borrowing_ticket.number = number
+    borrowing_ticket.borrowing_approval_ref_no = approval_ref_no
+    borrowing_ticket.borrowing_approval_date = approval_date
     borrowing_ticket.approved_at = datetime.now()
     borrowing_ticket.finance_verified = True
     db.session.commit()
